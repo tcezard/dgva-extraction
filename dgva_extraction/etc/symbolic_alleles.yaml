@@ -1,0 +1,47 @@
+# Symbolic ALT allele for each DGVa variant type (sprint 3, ticket 10).
+#
+# Keyed by the Sequence Ontology term name, normalised (lower case; spaces and hyphens become underscores). The names
+# are the Exchange variant types of dgva-pipeline/resources/ExchangeXSDs/Exchange.xsd; the SO terms actually used are
+# listed by dgva_extraction/sql/so_terms.sql once the SELECT-only account exists.
+#
+#   allele:     the symbolic allele, without brackets; null when VCF has none (the record is refused, which fails
+#               the study, until ticket 10 decides how to write it)
+#   end_is_pos: true for insertions, whose END is POS (the inserted sequence has no length on the reference)
+#   description: written in the ##ALT header line
+#   svclaim:    the VCF 4.4 SVCLAIM the type implies (needed on DEL and DUP alleles); absent when the type alone
+#               doesn't say whether the call claims a change of abundance (D), an adjacency (J) or both (DJ)
+#
+# The ALT description of a subtype names the subtype, so the header is the same whichever type uses it first.
+
+copy_number_gain: {allele: DUP, end_is_pos: false, description: Duplication, svclaim: D}
+duplication: {allele: DUP, end_is_pos: false, description: Duplication}
+tandem_duplication: {allele: DUP:TANDEM, end_is_pos: false, description: Tandem duplication}
+copy_number_loss: {allele: DEL, end_is_pos: false, description: Deletion, svclaim: D}
+deletion: {allele: DEL, end_is_pos: false, description: Deletion}
+mobile_element_deletion: {allele: DEL:ME, end_is_pos: false, description: Deletion of a mobile element}
+alu_deletion: {allele: DEL:ME:ALU, end_is_pos: false, description: Deletion of an ALU element}
+line1_deletion: {allele: DEL:ME:LINE1, end_is_pos: false, description: Deletion of a LINE1 element}
+sva_deletion: {allele: DEL:ME:SVA, end_is_pos: false, description: Deletion of an SVA element}
+herv_deletion: {allele: DEL:ME:HERV, end_is_pos: false, description: Deletion of an HERV element}
+copy_number_variation: {allele: CNV, end_is_pos: false, description: Copy number variable region}
+short_tandem_repeat_variation: {allele: CNV:TR, end_is_pos: false, description: Tandem repeat determined based on DNA abundance}
+short_tandem_repeat: {allele: CNV:TR, end_is_pos: false, description: Tandem repeat determined based on DNA abundance}
+inversion: {allele: INV, end_is_pos: false, description: Inversion}
+insertion: {allele: INS, end_is_pos: true, description: Insertion}
+novel_sequence_insertion: {allele: INS, end_is_pos: true, description: Insertion}
+mobile_element_insertion: {allele: INS:ME, end_is_pos: true, description: Insertion of a mobile element}
+alu_insertion: {allele: INS:ME:ALU, end_is_pos: true, description: Insertion of an ALU element}
+line1_insertion: {allele: INS:ME:LINE1, end_is_pos: true, description: Insertion of a LINE1 element}
+sva_insertion: {allele: INS:ME:SVA, end_is_pos: true, description: Insertion of an SVA element}
+herv_insertion: {allele: INS:ME:HERV, end_is_pos: true, description: Insertion of an HERV element}
+
+# No symbolic allele in VCF 4.4. Open in ticket 10: a record of one of these types fails the study until decided.
+interchromosomal_translocation: {allele: null, end_is_pos: false, description: Needs breakend (BND) notation and the mate position}
+intrachromosomal_translocation: {allele: null, end_is_pos: false, description: Needs breakend (BND) notation and the mate position}
+complex_substitution: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
+complex_structural_alteration: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
+sequence_alteration: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
+indel: {allele: null, end_is_pos: false, description: Written only from a sequence; no symbolic allele}
+delins: {allele: null, end_is_pos: false, description: Written only from a sequence; no symbolic allele}
+copy_number_neutral_loss_of_heterozygosity: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
+loss_of_heterozygosity: {allele: null, end_is_pos: false, description: No VCF symbolic allele}

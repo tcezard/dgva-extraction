@@ -1,0 +1,29 @@
+# Local configuration: credentials never go in the repository
+config.yaml
+*.config.yaml
+etc/local*
+.env
+
+# Outputs
+output/
+outputs/
+*.vcf
+*.vcf.gz
+*.tsv
+!tests/data/*.tsv
+!tests/data/*.vcf
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+dgva_extraction/_version.py
+.venv/
+venv/
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
