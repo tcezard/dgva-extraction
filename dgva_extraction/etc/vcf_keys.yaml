@@ -242,7 +242,7 @@
   number: 1
   type: String
   description: 'DGVa alt status of the placement (Known or Ambiguous)'
-  source: 'VARIANT_PLACEMENT_ALT_STATUS.ALT_STATUS (gap row 93). Dropped if it only repeats PLACEMENT_RANK (to check)'
+  source: 'VARIANT_PLACEMENT_ALT_STATUS.ALT_STATUS (gap row 93). Kept: it does not repeat the rank (checked 2026-11-20). Only nstd19 (mouse insertions) has it; its meaning is not documented beyond the XSD'
   reserved: false
   status: agreed
   sprint: 4

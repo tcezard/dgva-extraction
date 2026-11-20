@@ -39,7 +39,7 @@ long, descriptive name; no key for a value encoded elsewhere. `etc/vcf_keys.yaml
 | `RUC`, `RUS` | INFO | A, . | Float, String | yes | repeat counts and motifs (`nstd128`) | 4 |
 | `HGVS`, `CYTOBAND` | INFO | ., 1 | String | no | `VARIANT_PLACEMENT_HGVS`, `VARIANT_PLACEMENT_CYTOBAND` | 4 |
 | `MUTATION_ORDER` | INFO | . | Integer | no | `VAR_PLAC_MUTATION_ORDER` (369 rows) | 4 |
-| `PLACEMENT_ALT_STATUS` | INFO | 1 | String | no | `VARIANT_PLACEMENT_ALT_STATUS`; dropped if it only repeats the rank | 4 |
+| `PLACEMENT_ALT_STATUS` | INFO | 1 | String | no | `VARIANT_PLACEMENT_ALT_STATUS` (`nstd19` only); not a repeat of the rank (point 5) | 4 |
 | `VALIDATED` | INFO | 0 | Flag | yes | a positive validation result; the validation experiment goes in the metadata | 4 |
 | `VALIDATION_RESULT` | INFO | . | String | no | only if the results say more than `VALIDATED` (proposed) | 4 |
 | `SUBMITTED_SEQUENCE` | INFO | 1 | String | no | a sequence that is not an allele (gap row 89) | 4 |
@@ -336,8 +336,15 @@ allele names of point 3 are open.
    - **No key for a value encoded elsewhere:** `PLACEMENTS` and `SAMPLESET` are dropped; strand and breakpoint order
      are used to build breakends rather than written.
 
-   Still open: `PLACEMENT_ALT_STATUS` (drop it if it only repeats the rank), `VALIDATION_RESULT` (only if the results
-   say more than `VALIDATED`), and whether the experiment ID of a call goes on the variant or in the metadata. The
+   **`PLACEMENT_ALT_STATUS` is kept** (checked 2026-11-20): it doesn't repeat the rank. Only `nstd19` has it (mouse
+   insertions, 10,048 placements: 5,024 submitted on `GCF_000001635.16`, copied to the remapped ones). Every placement
+   with a status is `BestAvailable` and the only placement of its variant on the assembly, whether `Known` (4,420) or
+   `Ambiguous` (604). `Ambiguous` doesn't follow the chromosome, type (insertion or mobile element insertion), method,
+   or the width of the outer window either. The XSD defines it only as the status of the placement "Recipient", and
+   its meaning isn't documented further, so the key's description stays literal.
+
+   Still open: `VALIDATION_RESULT` (only if the results say more than `VALIDATED`), and whether the experiment ID of a
+   call goes on the variant or in the metadata. The
    allele names of point 3 are reviewed later in the ticket.
 6. **The SO terms in use.** `symbolic_alleles.yaml` is keyed by the Exchange types of the XSD.
    `dgva-extraction check-types` compares it with `SEQUENCE_ONTOLOGY_CV` once the `SELECT`-only account exists.
