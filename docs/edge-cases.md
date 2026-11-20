@@ -8,10 +8,11 @@ and what it needs.
 - Remove an entry when the code handles the case and a test covers it, and say so in the commit.
 - `tests/test_edge_cases_list.py` fails if a refusal or side-list reason in the code is missing from this file.
 
-Last updated: 2026-11-20, after ticket 10's decisions on VCF 4.4, `SVCLAIM` and the alleles the files define.
+Last updated: 2026-11-20, after reading the duplicate placements (`dgva-extraction duplicate-placements`).
 
 How the code treats a case today:
 - **Refused:** the writer refuses the record, and the whole study fails with no VCF. The statistics list each refusal.
+- **Written wrong:** the VCF is valid, but says something DGVa doesn't. **The most urgent group**: nothing flags it.
 - **Approximated:** the record is written, but with a default or a less precise allele than DGVa could support.
 - **Study fails:** the reader stops the study. None of these has been seen in the data; they are guards.
 - **Side list:** the record is not written, and is listed in the study's side list (`*.side_list.tsv`). Sprint 4 turns
@@ -44,13 +45,23 @@ Decided in ticket 10 on 2026-11-20. Each is valid VCF 4.4; the exact type stays 
 | Case | Written as | Where it occurs | What would make it exact |
 |---|---|---|---|
 | `SVCLAIM` on `<DEL>`/`<DUP>` from `deletion`, `duplication`, `tandem duplication` or the mobile element deletions, which don't say whether the call claims abundance or adjacency | `SVCLAIM=D` (abundance), the default: most DGVa technologies (arrays, read depth) measure abundance | `nstd83`: 15 deletions; most studies | Derive it from the study metadata, for example the detection method (sequencing calls may be `J` or `DJ`). A later ticket, if the gain is worth the cost. |
-| Translocations, inter- and intrachromosomal | `<TRA>`, defined in the file, with `SVLEN=.` | `estd236` (74 of its 89 rows), `nstd83` (20 call placements and 10 regions), and other studies | Breakend (`BND`) notation where DGVa has the mate's position and orientation (`VARIANT_MATE`, not read: section 4c). A later ticket. |
+| Translocations, inter- and intrachromosomal | `<TRA>`, defined in the file, with `SVLEN=.` | `estd236` (74 of its 89 rows), `nstd83` (20 call placements and 10 regions), and other studies | Breakend (`BND`) notation where DGVa has both ends: as two placements of the variant (section 1c: 70,125 variants), or as a mate (`VARIANT_MATE`, not read: section 4c). |
 | `complex chromosomal rearrangement`, `complex substitution`, `complex structural alteration` | `<CPX>`, defined in the file | `estd236`: 7 regions; others not counted | Nothing, unless a sequence is submitted (then written from it) |
 | `sequence alteration` | `<SEQALT>`, defined in the file | `estd1`: 25,193 calls | Nothing, unless a sequence is submitted |
 | `indel`, `delins` without a sequence | `<DELINS>`, defined in the file | not counted | The sequence, where DGVa has one (sprint 4) |
 | `copy-neutral loss of heterozygosity`, `loss of heterozygosity` | `<CNLOH>`, `<LOH>`, defined in the file | not counted | Nothing |
 
 The names of the alleles the files define are part of ticket 10's open point 5 (key names), for review.
+
+## 1c. Written wrong: valid VCF that misstates the variant
+
+Found on 2026-11-20 by `dgva-extraction duplicate-placements`; see `docs/vcf-representation.md`, open point 4.
+
+| Case | Written as today | Where it occurs | What it needs |
+|---|---|---|---|
+| A rearrangement submitted as two single-base placements, one per breakpoint, on one assembly: translocations, and some inversions and CNVs | Two records with the same ID, each a whole variant of 1 bp: `nssv13659711`, an 8 Mb deletion on chr14, becomes two 1 bp `<DEL>`; a translocation becomes two unlinked `<TRA>` | 70,125 variants: `nstd115` (58,284), `nstd106` (5,752), `nstd107` (2,766), `nstd99` (2,154), `nstd133` (1,167), `estd210` (2) | Ticket 10 point 4. Translocations: a `BND` pair, one record per breakend with its own ID and `MATEID`. Same-chromosome inversions and CNVs: one record from the first breakpoint to the second. Check whether `VAR_PLAC_BREAKPOINT_ORDER` (not read yet) numbers the two placements: it would identify these cases reliably. |
+| Alternative locations of one variant (segmental duplications, PAR) | Two records with the same ID | 1,290 variants: `nstd116` (1,286, 8p23.1), `nstd102` (4, PAR1 on X and Y) | Ticket 10 point 4 (inclination: the best placement keeps the accession as ID, the other gets its own ID) |
+| One variant in pieces: across two consecutive WGS contigs, or two segments of one cytogenetic event | Two records with the same ID, each looking like a whole variant | 133 variants: `nstd10` (131, CanFam2 contigs), `nstd40` (2) | Ticket 10 point 4; perhaps an `EVENT` key linking the pieces |
 
 ## 2. Study fails in the reader (guards; none seen in the data)
 
@@ -140,4 +151,4 @@ the metadata work (plan step 4).
 | Sprint 3 decision 3: the 32,192 variants only in `VARIANT_STUDY_NEW` | Open; recommended: leave out | Not read, so nothing to change if the recommendation holds |
 | Sprint 3 decision 4: the 2 live `estd214` chrY regions (`esv3818028`, `esv3817941`) | Open; recommended: treat as withdrawn | **Not implemented: the reader writes them today.** Needs an exclusion list if the recommendation is taken. |
 | Ticket 10 points 1–3: VCF 4.4; `SVCLAIM` defaults to `D`; types with no VCF allele get one the file defines | Decided 2026-11-20 | Implemented; see section 1b |
-| Ticket 10 open points 4–5 (duplicate IDs, key and allele names) | Open | See sections 1, 1b and 4 |
+| Ticket 10 open points 4–5 (duplicate IDs, key and allele names) | Open; point 4 leaning to a unique ID per placement, with the best placement keeping the accession | See sections 1, 1b, 1c and 4 |

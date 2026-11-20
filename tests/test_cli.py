@@ -109,3 +109,51 @@ def test_extract_fails_the_study_on_a_refused_record(run_extract, tmp_path):
     stats = (tmp_path / 'out' / 'estd1_GCA_TEST.1.stats.tsv').read_text()
     assert 'calls\trefused\tunknown_type\t1' in stats
     assert 'essv8' in stats
+
+
+def placement(placement_id, rank, chromosome, start, stop, method='Submitted genomic', assembly='GCA_1'):
+    return {'placement_id': placement_id, 'variant_type': 'deletion', 'assembly_accession': assembly, 'placement_method': method,
+            'has_remap_score': 0, 'placement_rank': rank, 'placements_per_assembly': 'Multiple',
+            'assembly_unit': None, 'alt_status': None, 'breakpoint_order': None, 'chromosome': chromosome, 'start_pos': start,
+            'stop_pos': stop, 'outer_start_pos': None, 'outer_stop_pos': None}
+
+
+def test_duplicate_placements_lists_every_placement_and_how_they_differ(tmp_path, monkeypatch, capsys):
+    config = tmp_path / 'config.yaml'
+    config.write_text('DGVA: {host: h, port: 1521, service_name: s, user: u, password: p}\n')
+    seeds = [{'study_accession': 'estd1', 'variant_study_id': 10, 'accession': 'esv1', 'assembly_accession': 'GCA_1'},
+             {'study_accession': 'estd1', 'variant_study_id': 10, 'accession': 'esv1', 'assembly_accession': 'GCA_1'},
+             {'study_accession': 'estd1', 'variant_study_id': 11, 'accession': 'esv2', 'assembly_accession': 'GCA_1'},
+             {'study_accession': 'estd2', 'variant_study_id': 12, 'accession': 'esv3', 'assembly_accession': 'GCA_1'}]
+    placements = [placement(1, 'BestAvailable', '1', 100, 200), placement(2, 'NotBest', '1', 150, 250),
+                  placement(3, 'BestAvailable', '1', 10, 20, method='Remapped', assembly='GCA_2')]
+    session = FakeSession()
+    summary = [{'variant_type': 'deletion', 'placements': 2, 'with_breakpoint_order': 2,
+                'lowest_breakpoint_order': '1', 'highest_breakpoint_order': '2', 'variants': 7}]
+    session.results = {'duplicate_placement_seeds': seeds, 'variant_placements': placements,
+                       'duplicate_placement_summary': summary,
+                       'breakpoint_order_cv': [{'breakpoint_order': '1', 'description': 'first', 'is_current': 1}]}
+    monkeypatch.setattr(cli, 'connect', lambda args: session)
+    output = tmp_path / 'duplicates.tsv'
+    assert cli.main(['--config', str(config), 'duplicate-placements', '--study', 'estd1', '--per-study', '1',
+                     '--output', str(output)]) == 0
+    # One variant per study, each seed variant once.
+    assert [binds for name, binds in session.calls if name == 'variant_placements'] == [
+        {'variant_study_id': 10}, {'variant_study_id': 12}]
+    assert len(output.read_text().splitlines()) == 1 + 2 * 3
+    printed = capsys.readouterr().out
+    assert ('estd1\tesv1\tdeletion\tGCA_1\t2 submitted placements (rank/breakpoint order: BestAvailable/None, '
+            'NotBest/None)\tsame chromosome, overlapping') in printed
+    assert 'deletion\t2\t2\t1\t2\t7' in printed
+    assert '1 = first' in printed
+
+
+@pytest.mark.parametrize('places, expected', [
+    ([('1', 1, 10), ('1', 1, 10)], 'identical positions'),
+    ([('1', 1, 10), ('2', 1, 10)], 'different chromosomes'),
+    ([('1', 1, 10), ('1', 5, 20)], 'same chromosome, overlapping'),
+    ([('1', 1, 10), ('1', 50, 60)], 'same chromosome, apart'),
+])
+def test_describe_duplicates(places, expected):
+    rows = [placement(i, 'NotBest', chromosome, start, stop) for i, (chromosome, start, stop) in enumerate(places)]
+    assert cli.describe_duplicates(rows) == expected

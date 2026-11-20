@@ -89,6 +89,10 @@ dgva-extraction --config ~/dgva/config.yaml extract --study estd1 --assembly GCA
 
 # Variants of a study that are in no VCF
 dgva-extraction --config ~/dgva/config.yaml side-list --study estd1 --output estd1.side_list.tsv
+
+# Variants of a study with several submitted placements on one assembly: count, examples, and every placement of
+# the examples (docs/vcf-representation.md, open point 4)
+dgva-extraction --config ~/dgva/config.yaml duplicate-placements --study nstd133 --output nstd133.duplicates.tsv
 ```
 
 ## Licence

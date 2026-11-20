@@ -210,12 +210,60 @@ decided on 2026-11-20 and are implemented. Points 4–6 are open.
    A translocation could be written exactly with breakend (`BND`) notation where DGVa has the mate's position and
    orientation (`VARIANT_MATE`, not read yet). That is a later ticket; `<TRA>` stays for the translocations without a
    mate, such as the `nstd83` regions that the reader positions from their supporting calls.
-4. **Duplicate IDs.** A variant with two submitted placements on one assembly (72,857 `Submitted genomic` placements
-   with rank `NotBest`) gives two records with the same ID. vcf-validator 0.10.2 accepts this, but VCF 4.4 says no
-   identifier should be present in more than one data record. Options: accept it (one record per placement, as
-   proposed), or write only the `BestAvailable` placement and list the others in the DGVa JSON.
-5. **Are the new key and allele names right?** `TYPESOID`, `ASSERTM`, `PLACEMETHOD`, `PARENT`, `SAMPLESET`, `VALIDMETH` and
-   `VALIDRES` reuse the legacy DGVa VCF exporter's names where it had one. The rest (`HGVS`, `PLACRANK`, `PLACEMENTS`,
-   `CYTOBAND`, `MUTORDER`, `SUBMITTED_TYPE`, `ALTSTATUS`, `SVSEQ`) are new, as are the alleles of point 3.
+4. **Duplicate IDs (open; leaning to a unique ID per placement).** A variant with two submitted placements on one
+   assembly gives two records with the same ID. vcf-validator 0.10.2 accepts this, but VCF 4.4 says no identifier
+   should be present in more than one data record.
+
+   **What the cases are** (`dgva-extraction duplicate-placements`, 2026-11-20). Variants with a `NotBest` submitted
+   placement are in 10 studies only: 71,548 variants, each with exactly 2 submitted placements on the assembly in every
+   example read. "Best" and "not best" mean different things depending on the case:
+
+   | Case | Studies (variants) | Example | What the two placements are |
+   |---|---|---|---|
+   | **a. The two breakpoints of one rearrangement** | `nstd115` (58,284), `nstd106` (5,752), `nstd107` (2,766), `nstd99` (2,154), `nstd133` (1,167), `estd210` (2) | `nstd99` `nssv3764364` interchromosomal translocation: chr17:38,378,792 and chr5:79,718,097. `nstd133` `nssv13659711` copy number loss: chr14:31,269,856 and chr14:39,513,878. | Two single-base placements, one per breakpoint: translocations (most), inversions and large CNVs (`nstd133`). Which one is "best" is arbitrary. |
+   | **b. Alternative locations of the same sequence** | `nstd116` (1,286), `nstd102` (4) | `nstd116` `nssv8640080` CNV: chr8:7,286,416–7,366,833 or chr8:7,669,242–7,740,180, the 8p23.1 segmental duplications. `nstd102` `nsv1398014` CNV: X:60,814–537,179 or Y:10,814–487,179, in PAR1. | The same variant, which can't be told apart between two copies of a sequence. |
+   | **c. One variant in pieces** | `nstd10` (131), `nstd40` (2) | `nstd10` `nsv429273` CNV on CanFam2 (`GCF_000002285.1`): AAEX02001078.1:1,121–11,033 and AAEX02001079.1:1–321, two consecutive WGS contigs. `nstd40` `nsv482237` CNV, cytogenetic: 6:164.5–171.1 Mb and 11:130.8–135.0 Mb. | Parts of one variant: split across contigs, or two segments of one rearrangement. |
+
+   **Case a is written wrong today, not just with a repeated ID.** Each breakpoint becomes its own record of the whole
+   variant: `nstd133`'s 8 Mb deletion `nssv13659711` gives two 1 bp `<DEL>` records, and each translocation gives two
+   `<TRA>` records with no link between them (`edge-cases.md`, section 1b).
+
+   **Options:**
+   - A. Keep one record per placement, with the accession as ID in each (as written today).
+   - B. Write only the `BestAvailable` placement; list the others in the DGVa JSON.
+   - C. **The developer's inclination (2026-11-20):** the best placement keeps the accession as its ID, so it is the one
+     shown first; each other placement gets an ID of its own and carries the accession in an INFO key (VCF 4.4 reserves
+     `DBVARID`, "ID of this element in DBVAR"). Nothing is hidden.
+
+   C fits each case:
+   - **b:** as described: the second location is kept, marked as secondary.
+   - **a:** VCF's own breakend notation needs exactly this: one record per breakend, each with its own ID, linked by
+     `MATEID`. So the translocations become a `BND` pair, using the two placements as the two ends (no need for
+     `VARIANT_MATE`), and a same-chromosome inversion or CNV given as two breakpoints becomes one record from the first
+     to the second. This turns the `BND` follow-up of point 3 into a sprint 4 need, since it concerns 70,125 variants.
+   - **c:** the larger piece keeps the accession; the other piece gets its own ID. An `EVENT` key could link the pieces.
+
+   Still to decide: the form of the extra IDs (for example `<accession>_2`), how case a is recognised (two
+   single-base placements, the type, or `VAR_PLAC_BREAKPOINT_ORDER` if it numbers the placements), and the INFO key for the accession.
+5. **Key and allele names (open; to review one by one).** `TYPESOID`, `ASSERTM`, `PLACEMETHOD`, `PARENT`, `SAMPLESET`,
+   `VALIDMETH` and `VALIDRES` reuse the legacy DGVa VCF exporter's names where it had one. The rest (`HGVS`, `PLACRANK`,
+   `PLACEMENTS`, `CYTOBAND`, `MUTORDER`, `SUBMITTED_TYPE`, `ALTSTATUS`, `SVSEQ`) are new. The keys for the fields of
+   `edge-cases.md` section 4c have no name yet.
+
+   Guidelines for the review (developer, 2026-11-20):
+   - **convertGVFtoVCF's names don't matter.** Only one of the two converters will be used.
+   - **Reuse what EVA already writes, before inventing.** For example, the EVA release writes the variant class as
+     `VC` ("Variant class according to the Sequence Ontology"), which `TYPESOID` duplicates. The release's other keys:
+     `SID` (studies that report a variant), `RS_VALIDATED`/`SS_VALIDATED` (validation), `REMAPPED`, `ALMM`, `ASMM` and
+     `LOE` (`eva-release-automation/publish_release_to_ftp/README_release_general_info.txt`). Check the other EVA
+     pipelines too, and the VCF 4.4 reserved keys (such as `DBVARID`, `DGVID`, `EVENT`, `MATEID`, `VALIDATED`).
+   - **Decide whether a property belongs to the variant or to the analysis.** Some per-variant values repeat a
+     property of the analysis (for example the placement method of a whole study, or the assertion method). Those go in
+     the metadata, and can also stay on the variant.
+   - **Long, descriptive names** rather than short, ambiguous ones.
+   - **Remove the keys whose value is already encoded elsewhere**, for example in the ALT allele, the ID, another key or
+     the metadata.
+
+   The allele names of point 3 are reviewed later in the ticket.
 6. **The SO terms in use.** `symbolic_alleles.yaml` is keyed by the Exchange types of the XSD.
    `dgva-extraction check-types` compares it with `SEQUENCE_ONTOLOGY_CV` once the `SELECT`-only account exists.
