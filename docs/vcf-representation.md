@@ -1,8 +1,9 @@
 # VCF representation of the DGVa data (sprint 3, ticket 10)
 
-**Status: proposed, for review by a second developer.** The writer implements these rules, so they can be tested and
-checked with vcf-validator, but nothing here is agreed until the review. Changing a rule after the studies are
-submitted means resubmitting them.
+**Status: agreed with the developer (2026-11-19 and 2026-11-20), waiting for the review by a second developer.** The
+writer implements these rules and they pass vcf-validator and eva-sub-cli validation. Point 6 (the SO terms in use)
+waits for the off-hours `dgva-extraction checks` run. Changing a rule after the studies are submitted means
+resubmitting them.
 
 The keys themselves are in [`dgva_extraction/etc/vcf_keys.yaml`](../dgva_extraction/etc/vcf_keys.yaml), and the
 symbolic allele for each variant type in [`dgva_extraction/etc/symbolic_alleles.yaml`](../dgva_extraction/etc/symbolic_alleles.yaml).
@@ -40,8 +41,15 @@ The first run failed on the **metadata** only, which says what the sprint 4 meta
 - `fileSize` given in the metadata JSON came out empty after eva-sub-cli's formatting step and failed the schema
   ("must be number"); leaving out `fileSize` and `md5` lets eva-sub-cli compute them. A tool quirk to report.
 
-Not covered: the sprint 4 keys (no values yet), `experimentType` (a fixed list: the DGVa method types need a mapping)
-and `platform` (one string per analysis).
+**Every key of the table** (second run, the same day): the test submission was extended with made-up values for the
+sprint 4 keys (`CN` in INFO and FORMAT, `RUC`/`RUS` on a `<CNV:TR>`, `HGVS`, `CYTOBAND`, `MUTATION_ORDER`,
+`PLACEMENT_ALT_STATUS`, `SUBMITTED_VARIANT_TYPE`, `SUBMITTED_SEQUENCE`, `SUBMITTER_VARIANT_ID`, `DESCRIPTION` with
+percent-encoded characters, `PHENOTYPE`, `EXTERNAL_LINKS`, `CLNSIG`, `AC`/`AN`, `SOMATIC`, `PLACEMENT_METHOD`, `GT`
+`1` and `GT:CN`). Result: **SUCCESS**, with the same metadata: no VCF error, 15/15 and 9/9 REF alleles match,
+evidence types as designed.
+
+Not covered: `experimentType` (a fixed list: the DGVa method types need a mapping) and `platform` (one string per
+analysis), which are metadata (sprint 4, ticket 14).
 
 ## Keys
 
@@ -213,12 +221,14 @@ Still open with this layout:
 
 ## Choices from the gap table (ticket 10, step 2)
 
-| Choice | Proposal |
+Decided with the key names (point 5 below, 2026-11-20).
+
+| Choice | Decision |
 |---|---|
 | Sequences that are not an allele (row 89) | INFO `SUBMITTED_SEQUENCE` |
 | `PLACEMENTS` always, or only when not `Single` (row 116) | **Dropped** (point 5): `EVENT` and the record IDs show the variants with several placements. |
 | `SUBMITTED_VARIANT_TYPE` (rows 86, 108) | Only where it differs from the Exchange type beyond case and `_`/`-` |
-| Placement method | Per line for non-default methods; header line for the null-method studies (rule 5) |
+| Placement method | Per line for non-default methods; the study default in the metadata; a header line for the null-method studies (rule 5) |
 
 ## Decisions on the representation
 

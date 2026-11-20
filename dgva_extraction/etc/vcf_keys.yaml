@@ -174,7 +174,7 @@
   description: Copy number of CNV/breakpoint
   source: VARIANT_CALL_COPY_NUMBER; ESTD214_CALLS_CN, ESTD219_CALLS_CN (load tables)
   reserved: true
-  status: proposed
+  status: agreed
   sprint: 4
 
 - key: AF
@@ -194,7 +194,7 @@
   description: Repeat unit count corresponding to each alternate allele
   source: VAR_CALL_REPEAT_COUNT, VAR_REG_REPEAT_COUNTS (gap rows 113, 120)
   reserved: true
-  status: proposed
+  status: agreed
   sprint: 4
 
 - key: RUS
@@ -204,7 +204,7 @@
   description: Repeat unit sequence of the corresponding repeat sequence
   source: VAR_REG_REPEAT_MOTIF (gap row 121)
   reserved: true
-  status: proposed
+  status: agreed
   sprint: 4
 
 - key: HGVS
@@ -364,5 +364,5 @@
   description: Copy number genotype for imprecise events
   source: VARIANT_CALL_COPY_NUMBER.COPY_NUMBER, for the call's sample
   reserved: true
-  status: proposed
+  status: agreed
   sprint: 4
