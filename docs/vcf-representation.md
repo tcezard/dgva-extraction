@@ -426,9 +426,9 @@ day. Point 6 is open.
 
    155 studies keep a single calls analysis. The large splits come from platforms: `nstd37`'s 33 experiments have 2
    method types, 2 analysis types and 4 detection methods, but 28 platforms (clinical laboratories' arrays). Not
-   counted: the 14 studies submitted on several assemblies, where an analysis per description and assembly could
-   add more (`nstd37`, `nstd102` and `nstd101` are among them); counting it needs a join of the calls with their
-   placements, outside busy hours. The regions analyses don't change: regions have no experiment.
+   counted: the 14 studies submitted on several assemblies, where a description's calls can be on several assemblies
+   (`nstd102`: 7 descriptions on 3 assemblies give 12 calls analyses, some with a single call). The exact count over
+   all studies is `dgva-extraction checks --step calls_per_experiment` (`calls_analyses.tsv`), run outside busy hours. The regions analyses don't change: regions have no experiment.
 
 6. **The SO terms in use.** `symbolic_alleles.yaml` is keyed by the Exchange types of the XSD.
    `dgva-extraction check-types` compares it with `SEQUENCE_ONTOLOGY_CV` once the `SELECT`-only account exists.

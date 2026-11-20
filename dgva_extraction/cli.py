@@ -12,7 +12,7 @@ import time
 
 from ebi_eva_common_pyutils.logger import logging_config as log_cfg
 
-from dgva_extraction import __version__
+from dgva_extraction import __version__, checks
 from dgva_extraction.config import database_config, load_config
 from dgva_extraction.database import DgvaDatabase
 from dgva_extraction.keys import SymbolicAlleles
@@ -158,6 +158,121 @@ def duplicate_placements(args):
     return 0
 
 
+CHECK_STEPS = ('list_studies', 'check_types', 'experiments', 'calls_per_experiment', 'validations')
+
+
+def _check_descriptions(database, context, output_dir):
+    """The merged experiment descriptions, read once (a fast query on small tables)."""
+    if 'descriptions' not in context:
+        descriptions = checks.Descriptions.from_rows(database.stream('check_experiment_descriptions', {}))
+        rows = list(descriptions.rows())
+        write_rows(os.path.join(output_dir, 'experiment_descriptions.tsv'), list(rows[0]) if rows else [], rows)
+        context['descriptions'] = descriptions
+    return context['descriptions']
+
+
+def _check_list_studies(database, args, context):
+    rows = list(database.stream('study_assembly_list', {'study': args.study or 'ALL'}))
+    write_rows(os.path.join(args.output_dir, 'study_assembly_list.tsv'), list(rows[0]) if rows else [], rows)
+    submitted = sum(row['submitted_variants'] or 0 for row in rows)
+    lines = [f'- {len({row["study_accession"] for row in rows})} studies; '
+             f'{sum(1 for row in rows if (row["submitted_placements"] or 0) > 0)} study-assemblies with submitted '
+             f'placements; {submitted} submitted variants.']
+    if not args.study:
+        verdict = 'matches' if submitted == checks.SPRINT2_SUBMITTED_VARIANTS else '**differs from**'
+        lines.append(f'- The total {verdict} sprint 2\'s {checks.SPRINT2_SUBMITTED_VARIANTS}.')
+    return lines
+
+
+def _check_types(database, args, context):
+    alleles = SymbolicAlleles.load()
+    rows = []
+    for row in database.stream('so_terms', {}):
+        entry = alleles.for_term(row['so_term'] or '')
+        rows.append(dict(row, allele='NOT IN TABLE' if entry is None else (entry.allele or 'none (refused)')))
+    write_rows(os.path.join(args.output_dir, 'check_types.tsv'), list(rows[0]) if rows else [], rows)
+    used = [row for row in rows if row['variants']]
+    missing = [f'{row["region_or_call"]} {row["exchange_type"]!r} ({row["so_term"]}, {row["variants"]} variants)'
+               for row in used if row['allele'] == 'NOT IN TABLE']
+    no_so = [f'{row["region_or_call"]} {row["exchange_type"]!r}' for row in used if not row['so_id']]
+    return [f'- {len(used)} region and call types in use, of {len(rows)} in the vocabularies.',
+            f'- **In use but not in `etc/symbolic_alleles.yaml` (the study fails):** {"; ".join(missing) or "none"}.',
+            f'- In use with no SO ID (W2, the study fails): {"; ".join(no_so) or "none"}.']
+
+
+def _check_experiments(database, args, context):
+    return _check_descriptions(database, context, args.output_dir).summary()
+
+
+def _check_calls_per_experiment(database, args, context):
+    descriptions = _check_descriptions(database, context, args.output_dir)
+    studies = [args.study] if args.study else descriptions.studies()
+    rows = []
+    for number, study in enumerate(studies, start=1):
+        started = time.time()
+        study_rows = list(database.stream('check_calls_per_experiment', {'study': study}))
+        rows.extend(study_rows)
+        logger.info(f'calls_per_experiment: {study} ({number}/{len(studies)}), {len(study_rows)} rows, '
+                    f'{time.time() - started:.1f} s')
+    for row in rows:
+        row['description_id'] = descriptions.description_of.get(row['experiment_id'], '')
+    write_rows(os.path.join(args.output_dir, 'calls_per_experiment.tsv'),
+               ['study_accession', 'assembly_accession', 'experiment_id', 'description_id', 'calls', 'placements'],
+               rows)
+    analyses = checks.calls_analyses(rows, descriptions)
+    write_rows(os.path.join(args.output_dir, 'calls_analyses.tsv'),
+               ['study_accession', 'assembly_accession', 'description_id', 'calls'],
+               [{'study_accession': study, 'assembly_accession': assembly, 'description_id': description,
+                 'calls': calls} for (study, assembly, description), calls in sorted(analyses.items())])
+    return checks.calls_analyses_summary(analyses, len(studies))
+
+
+def _check_validations(database, args, context):
+    descriptions = _check_descriptions(database, context, args.output_dir)
+    summary = checks.validation_summary(database.stream('check_multiple_validations', {}), descriptions)
+    write_rows(os.path.join(args.output_dir, 'validation_examples.tsv'),
+               ['accession', 'study_accession', 'validations', 'several_descriptions', 'mixed_results'],
+               summary.examples)
+    lines = summary.lines()
+    if args.study:
+        lines.append('- `--study` doesn\'t apply to this step: it reads the whole validation table.')
+    return lines
+
+
+CHECK_FUNCTIONS = {'list_studies': _check_list_studies, 'check_types': _check_types,
+                   'experiments': _check_experiments, 'calls_per_experiment': _check_calls_per_experiment,
+                   'validations': _check_validations}
+
+
+def run_checks(args):
+    """The off-hours checks (dgva_extraction.checks): one TSV per step and summary.md, written after each step."""
+    os.makedirs(args.output_dir, exist_ok=True)
+    steps = args.step or list(CHECK_STEPS)
+    summary_path = os.path.join(args.output_dir, 'summary.md')
+    lines = ['# dgva-extraction checks', '',
+             f'Started {time.strftime("%Y-%m-%d %H:%M:%S")}; steps: {", ".join(steps)}'
+             + (f'; study: {args.study}' if args.study else '; all studies') + '.', '']
+    failed = []
+    context = {}
+    with connect(args) as database:
+        for step in steps:
+            logger.info(f'Check {step}: started')
+            started = time.time()
+            try:
+                step_lines = CHECK_FUNCTIONS[step](database, args, context)
+            except Exception as error:  # A failed step is reported; the others still run.
+                logger.exception(f'Check {step} failed')
+                failed.append(step)
+                step_lines = [f'- **Failed:** {type(error).__name__}: {error}']
+            elapsed = time.time() - started
+            logger.info(f'Check {step}: {elapsed:.0f} s')
+            lines += [f'## {step} ({elapsed:.0f} s)', ''] + step_lines + ['']
+            with open(summary_path, 'w') as handle:
+                handle.write('\n'.join(lines))
+    print('\n'.join(lines))
+    return 1 if failed else 0
+
+
 # Regions and calls go to separate VCFs, for separate EVA analyses: the regions are DGVa's clusters of the submitted
 # calls, not the raw submitted data (docs/vcf-representation.md).
 RECORD_FILES = ('calls', 'regions')
@@ -253,6 +368,13 @@ def build_parser():
     command.add_argument('--per-study', type=int, default=3, help='At most this many variants per study (default 3)')
     command.add_argument('--output', required=True)
 
+    command = commands.add_parser('checks', help='Off-hours checks over the whole database (full scans): study list, '
+                                                 'types in use, calls analyses per experiment, validations')
+    command.add_argument('--output-dir', required=True)
+    command.add_argument('--step', action='append', choices=CHECK_STEPS,
+                         help='Run only this step (repeatable). Default: all, in order')
+    command.add_argument('--study', help='Restrict the per-study steps to one study (a short trial)')
+
     command = commands.add_parser('extract', help='Write the VCF of one study on one submitted assembly')
     command.add_argument('--study', required=True)
     command.add_argument('--assembly', required=True, help='Assembly accession, as in VARIANT_PLACEMENT')
@@ -263,7 +385,8 @@ def build_parser():
 
 
 COMMANDS = {'check-privileges': check_privileges, 'list-studies': list_studies, 'check-types': check_types,
-            'side-list': side_list, 'duplicate-placements': duplicate_placements, 'extract': extract}
+            'side-list': side_list, 'duplicate-placements': duplicate_placements, 'checks': run_checks,
+            'extract': extract}
 
 
 def main(argv=None):
