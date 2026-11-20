@@ -9,7 +9,7 @@
 #   - one VCF 4.4 defines (DEL, INS, DUP, INV, CNV and their subtypes) where the type fits it;
 #   - otherwise one defined here, written in the ##ALT header of each VCF that uses it. VCF 4.4 allows this. These
 #     can't have colon-separated subtypes (only the VCF types can), and are written with SVLEN=.
-# The exact type is kept in TYPESOID, so several types can share an allele.
+# The exact type is kept in VC, so several types can share an allele.
 #
 #   allele:      the symbolic allele, without brackets; null refuses the record, which fails the study
 #   end_is_pos:  true for insertions, whose END is POS (the inserted sequence has no length on the reference)
@@ -42,10 +42,11 @@ sva_insertion: {allele: INS:ME:SVA, end_is_pos: true, description: Insertion of 
 herv_insertion: {allele: INS:ME:HERV, end_is_pos: true, description: Insertion of an HERV element}
 
 # No VCF 4.4 allele: defined by the files that use them.
-# Translocations: breakend (BND) notation needs the mate's position; a later ticket writes it where DGVa has the
-# mate, and keeps <TRA> for the others.
+# Translocations: written in breakend notation when DGVa gives both breakpoints with their strands (ticket 10, point 4);
+# <TRA> for the others.
 interchromosomal_translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
 intrachromosomal_translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
+translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
 complex_structural_alteration: {allele: CPX, end_is_pos: false, description: Complex rearrangement of the region}
 complex_chromosomal_rearrangement: {allele: CPX, end_is_pos: false, description: Complex rearrangement of the region}
 complex_substitution: {allele: CPX, end_is_pos: false, description: Complex rearrangement of the region}

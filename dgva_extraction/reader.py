@@ -4,22 +4,28 @@ It applies the rules written down in sprints 1 and 2 (reference/dgva-oracle-sche
 
 - submitted or remapped: plan step 1.4. Only submitted placements become records; a "conflict" (submitted method with
   a remap score) or an unknown method fails the study.
-- W1: a call with no region is written, with no PARENT. Region-to-region links are kept.
+- W1: a call with no region is written, with no PARENT_REGION_ACCESSION. Region-to-region links are kept.
 - W2: a type with no SO term, a region with no assertion method or an unknown assembly fails the study.
 - W3: a placement with no start, or with a start but no chromosome, is not written and goes on the side list.
 - confidence intervals: CIPOS*/CIEND* first, then CI_START/CI_STOP (signed in estd219, unsigned elsewhere), then the
   inner and outer coordinates.
 - identical placements of one accession (estd208) are written once; the others go on the side list.
 - translocation regions with no placement of their own are positioned from their supporting calls (nstd83).
+- a variant with several distinct submitted placements on the assembly (ticket 10, point 4) is planned before the
+  records are read (plan_multi_placements): the best placement keeps the accession as ID, each other record gets
+  <accession>_2, _3..., and every record carries EVENT=<accession>. A translocation given as its two breakpoints
+  becomes a breakend pair, a complex rearrangement one single breakend per breakpoint, and an inversion or CNV given
+  as its two breakpoints one record from the first to the second.
 """
 import heapq
 import itertools
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Iterable, Iterator, List, Optional
+from typing import Dict, Iterable, Iterator, List, Optional
 
 from dgva_extraction.keys import SymbolicAlleles
-from dgva_extraction.record import ConfidenceInterval, RecordKind, VariantRecord
+from dgva_extraction.record import Breakend, BreakendSide, ConfidenceInterval, RecordKind, VariantRecord, \
+    normalise_so_term
 
 
 NO_POSITION_METHODS = frozenset({'Remap failed', 'Submitted without placement on assembly',
@@ -34,6 +40,12 @@ PLACEMENT_COLUMNS = (
     'outer_start_pos', 'inner_start_pos', 'inner_stop_pos', 'outer_stop_pos', 'ci_start_minus', 'ci_start_plus',
     'ci_stop_minus', 'ci_stop_plus', 'ciposleft', 'ciposright', 'ciendleft', 'ciendright',
 )
+
+
+# Ticket 10, point 4: the types whose several placements are breakpoints rather than alternative locations.
+TRANSLOCATION_TERMS = frozenset({'interchromosomal_translocation', 'intrachromosomal_translocation', 'translocation'})
+COMPLEX_TERMS = frozenset({'complex_chromosomal_rearrangement'})
+KNOWN_STRANDS = frozenset({'+', '-'})
 
 
 class ExtractionError(RuntimeError):
@@ -96,6 +108,136 @@ def _interval_from_signed(minus, plus):
     return ConfidenceInterval(_as_int(minus), _as_int(plus))
 
 
+@dataclass(frozen=True)
+class PlacementPlan:
+    """How one placement of a variant with several placements is written (ticket 10, point 4)."""
+    vcf_id: str
+    mode: str
+    info: Dict[str, object] = field(default_factory=dict)
+    breakend: Optional[Breakend] = None
+    end: Optional[int] = None
+    merged_into: Optional[int] = None
+
+
+def chromosome_sort_key(name):
+    """Natural chromosome order (1..22, X, Y, MT, then others by name): which end of a breakpoint pair counts as
+    'From' when DGVa doesn't say, as dbVar does (the lower position)."""
+    short = name[3:] if name.lower().startswith('chr') else name
+    if short.isdigit():
+        return 0, int(short), ''
+    special = {'X': 1, 'Y': 2, 'M': 3, 'MT': 3}
+    if short.upper() in special:
+        return 1, special[short.upper()], ''
+    return 2, 0, name
+
+
+def _from_side(strand):
+    """The path enters the junction from the From breakpoint: '+' keeps the sequence left of it."""
+    return BreakendSide.LEFT if strand == '+' else BreakendSide.RIGHT
+
+
+def _to_side(strand):
+    """...and continues from the To breakpoint: '+' keeps the sequence right of it."""
+    return BreakendSide.RIGHT if strand == '+' else BreakendSide.LEFT
+
+
+def plan_multi_placements(rows, alleles: SymbolicAlleles, counts: Counter = None) -> Dict[int, PlacementPlan]:
+    """Plan the variants listed by multi_placement_variants.sql, keyed by placement ID.
+
+    The join orientation of a breakend pair comes from the two strands, the From placement first (it matches every
+    breakend record of dbVar's VCFs for nstd106, nstd133 and nstd107). With no breakpoint order, the lower position
+    is From, as dbVar assumes. Placements with identical coordinates (estd208) share one plan; the reader writes the
+    first and side-lists the others.
+    """
+    counts = counts if counts is not None else Counter()
+    plans: Dict[int, PlacementPlan] = {}
+    for accession, group in itertools.groupby(rows, key=lambda row: row['accession']):
+        group = sorted(group, key=lambda row: row['placement_id'])
+        distinct, alias = [], {}
+        by_coordinates = {}
+        for row in group:
+            stop = row['stop_pos'] if row['stop_pos'] is not None else row['start_pos']
+            coordinates = (row['chromosome'], int(row['start_pos']), int(stop))
+            if coordinates in by_coordinates:
+                alias[row['placement_id']] = by_coordinates[coordinates]
+                continue
+            by_coordinates[coordinates] = row['placement_id']
+            distinct.append(dict(row, start=coordinates[1], stop=coordinates[2]))
+        if len(distinct) < 2:
+            continue
+        variant_plans = _plan_variant(accession, distinct, alleles, counts)
+        plans.update(variant_plans)
+        for placement_id, representative in alias.items():
+            plans[placement_id] = variant_plans[representative]
+    return plans
+
+
+def _plan_variant(accession, placements, alleles, counts):
+    so_term = normalise_so_term(placements[0]['so_term'])
+    best = [row for row in placements if row['placement_rank'] == 'BestAvailable']
+    primary = best[0] if len(best) == 1 else placements[0]
+    ids = {primary['placement_id']: accession}
+    for number, row in enumerate((row for row in placements if row is not primary), start=2):
+        ids[row['placement_id']] = f'{accession}_{number}'
+    single_base = all(row['start'] == row['stop'] for row in placements)
+    allele = alleles.for_term(so_term)
+
+    def info(row, event_type=None, **extra):
+        values = {'EVENT': [accession]}
+        if event_type:
+            values['EVENTTYPE'] = [event_type]
+        if row['placement_rank']:
+            values['PLACEMENT_RANK'] = row['placement_rank']
+        values.update(extra)
+        return values
+
+    if so_term in TRANSLOCATION_TERMS and len(placements) == 2 and single_base:
+        if all(row['strand'] in KNOWN_STRANDS for row in placements):
+            orders = {row['breakpoint_order']: row for row in placements}
+            if set(orders) == {'From', 'To'}:
+                from_row, to_row = orders['From'], orders['To']
+            else:
+                counts['breakend_pairs_from_lower_position'] += 1
+                from_row, to_row = sorted(placements, key=lambda row: (chromosome_sort_key(row['chromosome']),
+                                                                      row['start']))
+            from_side, to_side = _from_side(from_row['strand']), _to_side(to_row['strand'])
+            counts['breakend_pairs'] += 1
+            plans = {}
+            for row, side, mate, mate_side in ((from_row, from_side, to_row, to_side),
+                                               (to_row, to_side, from_row, from_side)):
+                plans[row['placement_id']] = PlacementPlan(
+                    ids[row['placement_id']], 'breakend_pair',
+                    info(row, 'TRA', MATEID=[ids[mate['placement_id']]]),
+                    breakend=Breakend(side, mate['chromosome'], mate['start'], mate_side))
+            return plans
+        counts['translocations_with_unknown_orientation'] += 1
+        return {row['placement_id']: PlacementPlan(ids[row['placement_id']], 'linked', info(row, 'TRA'))
+                for row in placements}
+
+    if so_term in COMPLEX_TERMS and single_base:
+        if all(row['strand'] in KNOWN_STRANDS and row['breakpoint_order'] in ('From', 'To') for row in placements):
+            counts['complex_rearrangements_as_single_breakends'] += 1
+            return {row['placement_id']: PlacementPlan(
+                ids[row['placement_id']], 'single_breakend', info(row, 'COMPLEX'),
+                breakend=Breakend(_from_side(row['strand']) if row['breakpoint_order'] == 'From'
+                                  else _to_side(row['strand'])))
+                for row in placements}
+        counts['complex_rearrangements_linked'] += 1
+        return {row['placement_id']: PlacementPlan(ids[row['placement_id']], 'linked', info(row, 'COMPLEX'))
+                for row in placements}
+
+    if (len(placements) == 2 and single_base and placements[0]['chromosome'] == placements[1]['chromosome']
+            and so_term not in COMPLEX_TERMS and not (allele is not None and allele.end_is_pos)):
+        first, second = sorted(placements, key=lambda row: row['start'])
+        counts['breakpoints_merged_into_one_record'] += 1
+        return {first['placement_id']: PlacementPlan(accession, 'span', end=second['start']),
+                second['placement_id']: PlacementPlan(accession, 'span', merged_into=first['placement_id'])}
+
+    counts['variants_linked_by_event'] += 1
+    return {row['placement_id']: PlacementPlan(ids[row['placement_id']], 'linked', info(row))
+            for row in placements}
+
+
 @dataclass
 class StudyReader:
     """Reads one study on one submitted assembly. Iterate records(); then read side_list and counts."""
@@ -106,6 +248,7 @@ class StudyReader:
     signed_ci_studies: frozenset = SIGNED_CI_STUDIES
     side_list: List[SideListEntry] = field(default_factory=list)
     counts: Counter = field(default_factory=Counter)
+    plans: Dict[int, PlacementPlan] = field(default_factory=dict)
 
     @property
     def binds(self):
@@ -113,6 +256,8 @@ class StudyReader:
 
     def records(self) -> Iterator[VariantRecord]:
         """Records in database order (chromosome name, start, accession), translocation regions merged in."""
+        self.plans = plan_multi_placements(self.database.stream('multi_placement_variants', self.binds),
+                                           self.alleles, self.counts)
         placements = self._placement_records(self.database.stream('study_records', self.binds))
         translocations = self._translocation_records(self.database.stream('translocation_regions', self.binds))
         return heapq.merge(placements, translocations, key=lambda record: (record.chromosome, record.start,
@@ -143,8 +288,26 @@ class StudyReader:
                            f'identical to placement {seen_at_position[identity]}')
                 continue
             seen_at_position[identity] = placement_id
+            record = self._apply_plan(record, placement_id)
+            if record is None:
+                continue
             self.counts['records'] += 1
             yield record
+
+    def _apply_plan(self, record, placement_id) -> Optional[VariantRecord]:
+        plan = self.plans.get(placement_id)
+        if plan is None:
+            return record
+        if plan.merged_into is not None:
+            self._side(record.accession, record.kind.value, 'merged_breakpoint', placement_id,
+                       f'second breakpoint, written as the end of the record of placement {plan.merged_into}')
+            return None
+        record.vcf_id = plan.vcf_id if plan.vcf_id != record.accession else None
+        record.info.update(plan.info)
+        record.breakend = plan.breakend
+        if plan.end is not None:
+            record.end = plan.end
+        return record
 
     @staticmethod
     def _single_placement_row(placement_id, group):
@@ -193,7 +356,7 @@ class StudyReader:
         parents = self._parents(accession, group)
         info = {}
         if kind == RecordKind.REGION.value:
-            info['ASSERTM'] = row['assertion_method']
+            info['REGION_ASSERTION_METHOD'] = row['assertion_method']
         return VariantRecord(
             accession=accession, kind=kind, so_term=row['so_term'], so_id=row['so_id'],
             chromosome=row['chromosome'], start=int(start), end=int(end),
@@ -276,7 +439,7 @@ class StudyReader:
                 accession=accession, kind=RecordKind.REGION, so_term=first['so_term'], so_id=first['so_id'],
                 chromosome=anchor['chromosome'], start=int(anchor['start_pos']),
                 end=int(anchor['stop_pos'] if anchor['stop_pos'] is not None else anchor['start_pos']),
-                placement_method=anchor['placement_method'], info={'ASSERTM': first['assertion_method']},
+                placement_method=anchor['placement_method'], info={'REGION_ASSERTION_METHOD': first['assertion_method']},
             ))
         records.sort(key=lambda record: (record.chromosome, record.start, record.accession))
         return iter(records)

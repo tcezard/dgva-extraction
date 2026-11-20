@@ -13,7 +13,7 @@ import yaml
 
 from conftest import CHR1, vcf_validator_errors
 from dgva_extraction.keys import SymbolicAlleles
-from dgva_extraction.record import ConfidenceInterval, VariantRecord
+from dgva_extraction.record import Breakend, BreakendSide, ConfidenceInterval, VariantRecord
 from dgva_extraction.vcf_writer import (OrderError, RecordError, StudyFailedError, StudyVcfWriter, VcfLineBuilder,
                                         normalise_reference)
 
@@ -196,6 +196,7 @@ def test_imprecise_sequence_is_refused(builder):
     ('novel_sequence_insertion', '<INS>', '20', '.'),
     # No VCF 4.4 allele: defined by the file, with no length.
     ('interchromosomal_translocation', '<TRA>', '40', '.'),
+    ('translocation', '<TRA>', '40', '.'),
     ('complex_chromosomal_rearrangement', '<CPX>', '40', '.'),
     ('complex_substitution', '<CPX>', '40', '.'),
     ('sequence_alteration', '<SEQALT>', '40', '.'),
@@ -300,21 +301,21 @@ def test_parents_type_and_placement_method(builder):
     record = call('nssv2', 'copy_number_loss', '1', 21, 40, so_id='SO:0001743', parents=('nsv9', 'nsv1', 'nsv9'),
                   placement_method='Submitted cytogenetic')
     info = dict(builder.build(record).info)
-    assert info['PARENT'] == 'nsv1,nsv9'
-    assert info['TYPESOID'] == 'SO:0001743'
-    assert info['PLACEMETHOD'] == 'Submitted cytogenetic'
+    assert info['PARENT_REGION_ACCESSION'] == 'nsv1,nsv9'
+    assert info['VC'] == 'SO:0001743'
+    assert info['PLACEMENT_METHOD'] == 'Submitted cytogenetic'
 
 
 def test_default_placement_method_is_not_written(builder):
     record = call('nssv2', 'copy_number_loss', '1', 21, 40, placement_method='Submitted genomic')
-    assert 'PLACEMETHOD' not in dict(builder.build(record).info)
+    assert 'PLACEMENT_METHOD' not in dict(builder.build(record).info)
 
 
 def test_info_keys_follow_the_key_table_order(builder):
     record = call('essv1', 'copy_number_loss', '1', 21, 40, info={'HGVS': ['x'], 'AF': [0.25]},
                   ci_pos=ConfidenceInterval(-1, 1), parents=('esv1',), so_id='SO:0001743')
     keys = [key for key, _ in builder.build(record).info]
-    assert keys == ['END', 'SVLEN', 'IMPRECISE', 'CIPOS', 'SVCLAIM', 'TYPESOID', 'PARENT', 'AF', 'HGVS']
+    assert keys == ['END', 'SVLEN', 'IMPRECISE', 'CIPOS', 'SVCLAIM', 'VC', 'PARENT_REGION_ACCESSION', 'AF', 'HGVS']
 
 
 def test_value_with_no_key_is_refused(builder):
@@ -508,3 +509,80 @@ def test_vcf_without_samples_has_a_missing_af_on_every_line(genome, tmp_path):
 def test_vcf_with_samples_has_no_missing_af(genome, tmp_path):
     write_vcf(genome, tmp_path / 'test.vcf', [call('essv1', 'copy_number_loss', '2', 100, 150)], samples=('S1',))
     assert 'AF' not in info_dict(data_lines(tmp_path / 'test.vcf')[0][7])
+
+
+# --- Ticket 10, point 4: breakends and variants written as several records ---
+
+LEFT, RIGHT = BreakendSide.LEFT, BreakendSide.RIGHT
+
+
+@pytest.mark.parametrize('side, mate_side, alt', [
+    (LEFT, RIGHT, 'T[2:50['), (LEFT, LEFT, 'T]2:50]'), (RIGHT, RIGHT, '[2:50[T'), (RIGHT, LEFT, ']2:50]T'),
+])
+def test_breakend_notation(builder, side, mate_side, alt):
+    # CHR1 position 64 is T (61 R, 62-64 TTG).
+    record = call('nssv1', 'interchromosomal_translocation', '1', 63, 63,
+                  breakend=Breakend(side, '2', 50, mate_side),
+                  info={'EVENT': ['nssv1'], 'EVENTTYPE': ['TRA'], 'MATEID': ['nssv1_2']})
+    line = builder.build(record)
+    assert (line.pos, line.ref, line.alt) == (63, 'T', alt)
+    keys = [key for key, _ in line.info]
+    assert 'END' not in keys and 'SVLEN' not in keys and line.symbolic_allele is None
+
+
+@pytest.mark.parametrize('side, alt', [(LEFT, 'T.'), (RIGHT, '.T')])
+def test_single_breakend_notation(builder, side, alt):
+    record = call('nsv9', 'complex_chromosomal_rearrangement', '1', 63, 63, vcf_id='nsv9_2',
+                  breakend=Breakend(side), info={'EVENT': ['nsv9'], 'EVENTTYPE': ['COMPLEX']})
+    line = builder.build(record)
+    assert (line.id, line.alt) == ('nsv9_2', alt)
+    assert dict(line.info)['EVENT'] == 'nsv9'
+
+
+def test_breakend_on_an_unknown_mate_chromosome_is_refused(builder):
+    with pytest.raises(RecordError) as error:
+        builder.build(call('nssv1', 'translocation', '1', 63, 63, breakend=Breakend(LEFT, '7', 5, RIGHT)))
+    assert error.value.reason == 'unknown_chromosome'
+
+
+def test_breakend_spanning_several_bases_is_refused(builder):
+    with pytest.raises(RecordError) as error:
+        builder.build(call('nssv1', 'translocation', '1', 63, 70, breakend=Breakend(LEFT)))
+    assert error.value.reason == 'invalid_breakend'
+
+
+def test_undeclared_event_type_is_refused(builder):
+    with pytest.raises(RecordError) as error:
+        builder.build(call('nssv1', 'deletion', '1', 21, 40, info={'EVENT': ['nssv1'], 'EVENTTYPE': ['MADE_UP']}))
+    assert error.value.reason == 'unknown_event_type'
+
+
+def test_variants_written_as_several_records_are_valid(genome, tmp_path):
+    records = [
+        # A translocation (From chr1:63 '+', To chr2:50 '-'), a complex rearrangement as single breakends, and
+        # alternative locations of a CNV.
+        call('nssv1', 'interchromosomal_translocation', '1', 63, 63, breakend=Breakend(LEFT, '2', 50, LEFT),
+             info={'EVENT': ['nssv1'], 'EVENTTYPE': ['TRA'], 'MATEID': ['nssv1_2'], 'PLACEMENT_RANK': 'BestAvailable'}),
+        call('nsv9', 'complex_chromosomal_rearrangement', '1', 100, 100, breakend=Breakend(LEFT),
+             info={'EVENT': ['nsv9'], 'EVENTTYPE': ['COMPLEX']}),
+        call('nsv9', 'complex_chromosomal_rearrangement', '1', 120, 120, vcf_id='nsv9_2', breakend=Breakend(RIGHT),
+             info={'EVENT': ['nsv9'], 'EVENTTYPE': ['COMPLEX']}),
+        call('nssv8', 'copy_number_variation', '1', 130, 150, info={'EVENT': ['nssv8'],
+                                                                   'PLACEMENT_RANK': 'BestAvailable'}),
+        call('nssv1', 'interchromosomal_translocation', '2', 50, 50, vcf_id='nssv1_2',
+             breakend=Breakend(LEFT, '1', 63, LEFT),
+             info={'EVENT': ['nssv1'], 'EVENTTYPE': ['TRA'], 'MATEID': ['nssv1'], 'PLACEMENT_RANK': 'NotBest'}),
+        call('nssv8', 'copy_number_variation', '2', 200, 220, vcf_id='nssv8_2',
+             info={'EVENT': ['nssv8'], 'PLACEMENT_RANK': 'NotBest'}),
+    ]
+    write_vcf(genome, tmp_path / 'test.vcf', records, samples=())
+    text = (tmp_path / 'test.vcf').read_text()
+    assert '##EVENTTYPE=<ID=COMPLEX,Description="Complex chromosomal rearrangement' in text
+    assert '##EVENTTYPE=<ID=TRA' not in text  # reserved by VCF 4.4: not declared
+    assert [line[2] for line in data_lines(tmp_path / 'test.vcf')] == ['nssv1_2', 'nssv8_2', 'nssv1', 'nsv9',
+                                                                       'nsv9_2', 'nssv8']
+    errors = vcf_validator_errors(str(tmp_path / 'test.vcf'))
+    if errors is None:
+        pytest.skip('vcf_validator is not installed')
+    # vcf_validator warns on a single breakend joined on its right ('.T'), whose ALT doesn't start with REF by design.
+    assert [error for error in errors if 'do not share the first nucleotide' not in error] == []

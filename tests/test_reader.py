@@ -1,8 +1,12 @@
 """Ticket 13: mapping database rows to records, and the edge cases of sprints 1 and 2, with a fake database."""
+from collections import Counter
+
 import pytest
 
-from dgva_extraction.reader import ExtractionError, StudyReader, placement_class, study_side_list
-from dgva_extraction.record import ConfidenceInterval, RecordKind
+from dgva_extraction.keys import SymbolicAlleles
+from dgva_extraction.reader import (ExtractionError, StudyReader, chromosome_sort_key, placement_class,
+                                     plan_multi_placements, study_side_list)
+from dgva_extraction.record import Breakend, BreakendSide, ConfidenceInterval, RecordKind
 
 
 def placement_row(placement_id, accession, chromosome='1', start=100, stop=200, **overrides):
@@ -24,9 +28,9 @@ def placement_row(placement_id, accession, chromosome='1', start=100, stop=200, 
 
 
 class FakeDatabase:
-    def __init__(self, records=(), translocations=(), side_list=()):
+    def __init__(self, records=(), translocations=(), side_list=(), multi_placements=()):
         self.results = {'study_records': list(records), 'translocation_regions': list(translocations),
-                        'study_side_list': list(side_list)}
+                        'study_side_list': list(side_list), 'multi_placement_variants': list(multi_placements)}
         self.calls = []
 
     def stream(self, name, binds):
@@ -34,8 +38,9 @@ class FakeDatabase:
         return iter(self.results[name])
 
 
-def read(rows, study='estd1', translocations=()):
-    reader = StudyReader(FakeDatabase(rows, translocations), study, 'GCA_000001405.1')
+def read(rows, study='estd1', translocations=(), multi_placements=()):
+    reader = StudyReader(FakeDatabase(rows, translocations, multi_placements=multi_placements), study,
+                         'GCA_000001405.1')
     return reader, list(reader.records())
 
 
@@ -63,7 +68,7 @@ def test_row_to_record():
     assert (record.accession, record.kind, record.so_term, record.so_id) == \
         ('esv1', RecordKind.REGION, 'copy_number_variation', 'SO:0001019')
     assert (record.chromosome, record.start, record.end, record.placement_id) == ('1', 100, 200, 1)
-    assert record.info == {'ASSERTM': 'Merging'}
+    assert record.info == {'REGION_ASSERTION_METHOD': 'Merging'}
     assert record.placement_method == 'Submitted genomic'
 
 
@@ -251,3 +256,122 @@ def test_study_side_list():
     assert [(entry.accession, entry.reason) for entry in entries] == [('esv1', 'withdrawn'),
                                                                       ('nssv2', 'remapped_only')]
     assert 'estd222' in entries[0].detail
+
+
+# --- Ticket 10, point 4: variants with several submitted placements on one assembly ---
+
+def multi_row(placement_id, accession, chromosome, start, stop=None, so_term='interchromosomal translocation',
+              rank='NotBest', order=None, strand=None):
+    return {'accession': accession, 'placement_id': placement_id, 'so_term': so_term, 'chromosome': chromosome,
+            'start_pos': start, 'stop_pos': start if stop is None else stop, 'placement_rank': rank,
+            'breakpoint_order': order, 'strand': strand}
+
+
+def plan(rows):
+    return plan_multi_placements(rows, SymbolicAlleles.load())
+
+
+@pytest.mark.parametrize('from_strand, to_strand, from_side, to_side', [
+    # The four joins of dbVar's VCFs: From record t[p[, t]p], [p[t, ]p]t.
+    ('+', '+', BreakendSide.LEFT, BreakendSide.RIGHT),
+    ('+', '-', BreakendSide.LEFT, BreakendSide.LEFT),
+    ('-', '+', BreakendSide.RIGHT, BreakendSide.RIGHT),
+    ('-', '-', BreakendSide.RIGHT, BreakendSide.LEFT),
+])
+def test_translocation_breakpoints_become_a_breakend_pair(from_strand, to_strand, from_side, to_side):
+    plans = plan([multi_row(1, 'nssv1', '5', 500, rank='NotBest', order='To', strand=to_strand),
+                  multi_row(2, 'nssv1', '17', 300, rank='BestAvailable', order='From', strand=from_strand)])
+    # The best placement keeps the accession; the other gets its own ID. Both carry the accession in EVENT.
+    assert (plans[2].vcf_id, plans[1].vcf_id) == ('nssv1', 'nssv1_2')
+    assert plans[2].breakend == Breakend(from_side, '5', 500, to_side)
+    assert plans[1].breakend == Breakend(to_side, '17', 300, from_side)
+    assert plans[2].info == {'EVENT': ['nssv1'], 'EVENTTYPE': ['TRA'], 'MATEID': ['nssv1_2'],
+                             'PLACEMENT_RANK': 'BestAvailable'}
+    assert plans[1].info['MATEID'] == ['nssv1']
+
+
+def test_breakend_pair_with_no_breakpoint_order_takes_the_lower_position_as_from():
+    counts = Counter()
+    plans = plan_multi_placements([multi_row(1, 'nssv1', '17', 300, strand='+', rank='BestAvailable'),
+                                   multi_row(2, 'nssv1', '5', 500, strand='-')], SymbolicAlleles.load(), counts)
+    # From is chromosome 5 (lower than 17): '-' keeps its right side; To (17) '+' keeps its right side.
+    assert plans[2].breakend == Breakend(BreakendSide.RIGHT, '17', 300, BreakendSide.RIGHT)
+    assert counts['breakend_pairs_from_lower_position'] == 1
+
+
+@pytest.mark.parametrize('strands', [('not reported', 'not reported'), (None, None), ('+', None)])
+def test_translocation_with_unknown_strand_stays_symbolic_and_linked(strands):
+    plans = plan([multi_row(1, 'nssv1', '1', 100, strand=strands[0], rank='BestAvailable'),
+                  multi_row(2, 'nssv1', '1', 900, strand=strands[1])])
+    assert all(item.breakend is None and item.mode == 'linked' for item in plans.values())
+    assert plans[2].info == {'EVENT': ['nssv1'], 'EVENTTYPE': ['TRA'], 'PLACEMENT_RANK': 'NotBest'}
+
+
+def test_complex_rearrangement_breakpoints_become_single_breakends():
+    rows = [multi_row(1, 'nsv9', '1', 100, so_term='complex chromosomal rearrangement', order='From', strand='+'),
+            multi_row(2, 'nsv9', '1', 200, so_term='complex chromosomal rearrangement', order='To', strand='+'),
+            multi_row(3, 'nsv9', '3', 300, so_term='complex chromosomal rearrangement', order='From', strand='-',
+                      rank='BestAvailable')]
+    plans = plan(rows)
+    assert [plans[i].vcf_id for i in (3, 1, 2)] == ['nsv9', 'nsv9_2', 'nsv9_3']
+    assert [plans[i].breakend.side for i in (1, 2, 3)] == [BreakendSide.LEFT, BreakendSide.RIGHT, BreakendSide.RIGHT]
+    assert all(plans[i].breakend.is_single and plans[i].info['EVENTTYPE'] == ['COMPLEX'] for i in (1, 2, 3))
+
+
+def test_inversion_given_as_two_breakpoints_becomes_one_record():
+    plans = plan([multi_row(1, 'nssv5', '14', 39513878, so_term='inversion', rank='NotBest'),
+                  multi_row(2, 'nssv5', '14', 31269856, so_term='inversion', rank='BestAvailable')])
+    assert plans[2].end == 39513878 and plans[2].vcf_id == 'nssv5' and not plans[2].info
+    assert plans[1].merged_into == 2
+
+
+@pytest.mark.parametrize('rows', [
+    # b. Alternative locations (nstd116, segmental duplications).
+    [multi_row(1, 'nssv8', '8', 7286416, 7366833, so_term='copy number variation', rank='BestAvailable'),
+     multi_row(2, 'nssv8', '8', 7669242, 7740180, so_term='copy number variation')],
+    # c. Pieces on consecutive contigs (nstd10).
+    [multi_row(1, 'nsv4', 'AAEX02001078.1', 1121, 11033, so_term='copy number variation', rank='BestAvailable'),
+     multi_row(2, 'nsv4', 'AAEX02001079.1', 1, 321, so_term='copy number variation')],
+])
+def test_alternative_locations_and_pieces_are_linked_by_event(rows):
+    plans = plan(rows)
+    assert [plans[1].vcf_id, plans[2].vcf_id] == [rows[0]['accession'], rows[0]['accession'] + '_2']
+    assert plans[2].info == {'EVENT': [rows[0]['accession']], 'PLACEMENT_RANK': 'NotBest'}
+    assert plans[1].breakend is None and plans[1].end is None
+
+
+def test_identical_placements_share_a_plan_and_alone_need_none():
+    # estd208: five identical placements are one variant on one position: no plan.
+    assert plan([multi_row(i, 'esv1', '1', 100, 200, so_term='deletion') for i in range(1, 6)]) == {}
+    plans = plan([multi_row(1, 'esv2', '1', 100, 200, so_term='deletion', rank='BestAvailable'),
+                  multi_row(2, 'esv2', '1', 100, 200, so_term='deletion'),
+                  multi_row(3, 'esv2', '2', 100, 200, so_term='deletion')])
+    assert plans[2] is plans[1] and plans[3].vcf_id == 'esv2_2'
+
+
+def test_no_best_placement_keeps_the_accession_on_the_lowest_placement_id():
+    plans = plan([multi_row(7, 'nssv8', '8', 100, 200, so_term='copy number variation', rank=None),
+                  multi_row(3, 'nssv8', '8', 500, 600, so_term='copy number variation', rank=None)])
+    assert (plans[3].vcf_id, plans[7].vcf_id) == ('nssv8', 'nssv8_2')
+    assert 'PLACEMENT_RANK' not in plans[3].info
+
+
+def test_chromosome_sort_key_is_natural():
+    assert sorted(['X', '10', 'chr2', '1', 'MT', 'Y', 'AAEX02001078.1'], key=chromosome_sort_key) == \
+        ['1', 'chr2', '10', 'X', 'Y', 'MT', 'AAEX02001078.1']
+
+
+def test_reader_applies_the_plan_to_the_records():
+    rows = [placement_row(1, 'nssv5', '14', 100, 100, so_term='inversion', so_id='SO:1000036'),
+            placement_row(2, 'nssv5', '14', 900, 900, so_term='inversion', so_id='SO:1000036'),
+            placement_row(3, 'nssv6', '14', 950, 950, so_term='interchromosomal_translocation', so_id='SO:0002060'),
+            placement_row(4, 'nssv6', '15', 50, 50, so_term='interchromosomal_translocation', so_id='SO:0002060')]
+    multi = [multi_row(1, 'nssv5', '14', 100, so_term='inversion', rank='BestAvailable'),
+             multi_row(2, 'nssv5', '14', 900, so_term='inversion'),
+             multi_row(3, 'nssv6', '14', 950, order='From', strand='+', rank='BestAvailable'),
+             multi_row(4, 'nssv6', '15', 50, order='To', strand='-')]
+    reader, records = read(rows, multi_placements=multi)
+    assert [(record.id, record.start, record.end) for record in records] == [
+        ('nssv5', 100, 900), ('nssv6', 950, 950), ('nssv6_2', 50, 50)]
+    assert records[1].breakend == Breakend(BreakendSide.LEFT, '15', 50, BreakendSide.LEFT)
+    assert [(entry.accession, entry.reason) for entry in reader.side_list] == [('nssv5', 'merged_breakpoint')]

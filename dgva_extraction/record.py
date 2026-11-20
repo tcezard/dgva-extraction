@@ -23,6 +23,34 @@ class ConfidenceInterval:
         return [self.lower, self.upper]
 
 
+class BreakendSide(str, Enum):
+    """Which side of a breakpoint takes part in the join (VCF 4.4 breakend notation, section 5.4)."""
+    LEFT = 'left'    # the sequence to the left of the breakpoint, up to it: 't[p[', 't]p]' or 't.'
+    RIGHT = 'right'  # the sequence to the right of the breakpoint, from it: ']p]t', '[p[t' or '.t'
+
+
+@dataclass(frozen=True)
+class Breakend:
+    """A breakpoint written in breakend notation: the side of this breakpoint that is joined, and the mate breakend
+    (its position and joined side), or no mate for a single breakend."""
+    side: BreakendSide
+    mate_chromosome: Optional[str] = None
+    mate_position: Optional[int] = None
+    mate_side: Optional[BreakendSide] = None
+
+    def __post_init__(self):
+        object.__setattr__(self, 'side', BreakendSide(self.side))
+        if self.mate_side is not None:
+            object.__setattr__(self, 'mate_side', BreakendSide(self.mate_side))
+        mate = (self.mate_chromosome, self.mate_position, self.mate_side)
+        if any(value is not None for value in mate) and any(value is None for value in mate):
+            raise ValueError('A mate breakend needs a chromosome, a position and a side')
+
+    @property
+    def is_single(self):
+        return self.mate_chromosome is None
+
+
 def normalise_so_term(term):
     """'copy number gain', 'copy_number_gain' and 'Copy-Number Gain' all become 'copy_number_gain'."""
     return re.sub(r'[\s\-]+', '_', term.strip().lower()) if term else term
@@ -34,6 +62,8 @@ class VariantRecord:
 
     Coordinates are 1-based and inclusive: start is the first affected base and end the last one (the best estimate
     when the variant is imprecise). For an insertion, the sequence is inserted before `start`.
+    A variant written as several records (ticket 10, point 4) gives each record its own `vcf_id`, and carries the
+    accession in INFO EVENT. A breakend record (`breakend`) is written at `start` in breakend notation.
     The confidence intervals are offsets from start and end; when they are not given, they are derived from the
     inner and outer coordinates (see confidence_intervals()).
     """
@@ -56,11 +86,18 @@ class VariantRecord:
     parents: Tuple[str, ...] = ()
     placement_method: Optional[str] = None
     placement_id: Optional[int] = None
+    vcf_id: Optional[str] = None
+    breakend: Optional[Breakend] = None
 
     def __post_init__(self):
         self.kind = RecordKind(self.kind)
         self.so_term = normalise_so_term(self.so_term)
         self.parents = tuple(self.parents)
+
+    @property
+    def id(self):
+        """The VCF ID: the accession, unless the variant is written as several records."""
+        return self.vcf_id or self.accession
 
     def confidence_intervals(self):
         """Return (CIPOS, CIEND), each a ConfidenceInterval or None.

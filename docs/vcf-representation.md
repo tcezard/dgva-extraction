@@ -15,28 +15,45 @@ The proposals were checked with vcf-validator 0.10.2 on VCFs written by the writ
 
 ## Keys
 
-| Key | Field | Number | Type | Reserved (4.4) | Source | Status |
+Names decided on 2026-11-20 (point 5 below): a VCF 4.4 reserved key first, then a key EVA already writes, then a new
+long, descriptive name; no key for a value encoded elsewhere. `etc/vcf_keys.yaml` has every key with its source.
+
+| Key | Field | Number | Type | Reserved (4.4) | Source | Sprint |
 |---|---|---|---|---|---|---|
-| `END` | INFO | 1 | Integer | yes | stop (or outer/inner stop); `POS` for insertions | agreed |
-| `SVLEN` | INFO | A | Integer | yes | stop − start + 1; `.` for insertions | agreed |
-| `IMPRECISE` | INFO | 0 | Flag | yes | any CI bound not 0 | agreed |
-| `CIPOS`, `CIEND` | INFO | 2 | Integer | yes | `CIPOS*`/`CIEND*`, else `CI_START`/`CI_STOP`, else inner/outer | agreed |
-| `SVCLAIM` | INFO | A | String | yes | `D` by default, which copy number gain/loss also imply (decision 2 below) | agreed |
-| `TYPESOID` | INFO | 1 | String | no | SO ID of the type (name from the legacy VCF exporter) | proposed |
-| `SUBMITTED_TYPE` | INFO | 1 | String | no | submitter type, where it differs beyond case and separators | proposed (sprint 4) |
-| `PARENT` | INFO | . | String | no | `LINKED_VARIANT`: call → region and region → region | proposed |
-| `ASSERTM` | INFO | 1 | String | no | region assertion method (name from the legacy VCF exporter) | proposed |
-| `PLACEMETHOD` | INFO | 1 | String | no | placement method, when not `Submitted genomic` | proposed |
-| `AF` | INFO | A | Float | yes | allele frequency (incl. the `estd219` load table); `.` on every line of a VCF with no samples | **agreed (2026-11-19)** |
-| `CN` | INFO | A | Float | yes | copy number (incl. the `estd214`/`estd219` load tables) | proposed (sprint 4) |
-| `RUC`, `RUS` | INFO | A, . | Float, String | yes | repeat counts and motifs (`nstd128`) | proposed (sprint 4) |
-| `HGVS` | INFO | . | String | no | `VARIANT_PLACEMENT_HGVS` | proposed (sprint 4) |
-| `PLACRANK`, `PLACEMENTS` | INFO | 1 | String | no | `VAR_PLAC_PLACEMENT_RANK`, `VAR_PLAC_PLACS_PER_ASSEM` | proposed (sprint 4) |
-| `CYTOBAND`, `MUTORDER`, `ALTSTATUS` | INFO | 1, ., 1 | String, Integer, String | no | gap rows 105, 52/114, 93 | proposed (sprint 4) |
-| `SAMPLESET`, `VALIDMETH`, `VALIDRES` | INFO | . | String | no | from the legacy VCF exporter; gap rows 88, 90, 91 | proposed (sprint 4) |
-| `SVSEQ` | INFO | 1 | String | no | a sequence that is not an allele (gap row 89) | proposed (sprint 4) |
-| `GT` | FORMAT | 1 | String | yes | zygosity of the call's sample and the species' ploidy (rule 4) | **agreed (2026-11-19)**, read in sprint 4 |
-| `CN` | FORMAT | 1 | Float | yes | copy number of the call's sample | proposed (sprint 4) |
+| `END` | INFO | 1 | Integer | yes | stop (or outer/inner stop); `POS` for insertions | 3 |
+| `SVLEN` | INFO | A | Integer | yes | stop − start + 1; `.` for insertions and the alleles the file defines | 3 |
+| `IMPRECISE` | INFO | 0 | Flag | yes | any CI bound not 0 | 3 |
+| `CIPOS`, `CIEND` | INFO | 2 | Integer | yes | `CIPOS*`/`CIEND*`, else `CI_START`/`CI_STOP`, else inner/outer | 3 |
+| `SVCLAIM` | INFO | A | String | yes | `D` by default, which copy number gain/loss also imply (point 2 below) | 3 |
+| `VC` | INFO | 1 | String | no; EVA release key | SO accession of the type, as in the EVA release (`VC=SO:0000159`) | 3 |
+| `SUBMITTED_VARIANT_TYPE` | INFO | 1 | String | no | submitter type, where it differs beyond case and separators | 4 |
+| `PARENT_REGION_ACCESSION` | INFO | . | String | no | `LINKED_VARIANT`: call → region and region → region | 3 |
+| `REGION_ASSERTION_METHOD` | INFO | 1 | String | no | region assertion method; also in the metadata when the same for the whole study | 3 |
+| `PLACEMENT_METHOD` | INFO | 1 | String | no | placement method, when not `Submitted genomic`; the study default in the metadata | 3 |
+| `EVENT` | INFO | A | String | yes | the accession, on every record of a variant written as several records (point 4) | 3 |
+| `EVENTTYPE` | INFO | A | String | yes | `TRA`, or `COMPLEX` (declared in a `##EVENTTYPE` line) (point 4) | 3 |
+| `MATEID` | INFO | A | String | yes | the other breakend of a translocation given as two placements (point 4) | 3 |
+| `PLACEMENT_RANK` | INFO | 1 | String | no | `VAR_PLAC_PLACEMENT_RANK`; on variants written as several records from sprint 3 | 3 and 4 |
+| `CN` | INFO | A | Float | yes | copy number (incl. the `estd214`/`estd219` load tables) | 4 |
+| `AF` | INFO | A | Float | yes | allele frequency (incl. the `estd219` load table); `.` on every line of a VCF with no samples | 3 |
+| `RUC`, `RUS` | INFO | A, . | Float, String | yes | repeat counts and motifs (`nstd128`) | 4 |
+| `HGVS`, `CYTOBAND` | INFO | ., 1 | String | no | `VARIANT_PLACEMENT_HGVS`, `VARIANT_PLACEMENT_CYTOBAND` | 4 |
+| `MUTATION_ORDER` | INFO | . | Integer | no | `VAR_PLAC_MUTATION_ORDER` (369 rows) | 4 |
+| `PLACEMENT_ALT_STATUS` | INFO | 1 | String | no | `VARIANT_PLACEMENT_ALT_STATUS`; dropped if it only repeats the rank | 4 |
+| `VALIDATED` | INFO | 0 | Flag | yes | a positive validation result; the validation experiment goes in the metadata | 4 |
+| `VALIDATION_RESULT` | INFO | . | String | no | only if the results say more than `VALIDATED` (proposed) | 4 |
+| `SUBMITTED_SEQUENCE` | INFO | 1 | String | no | a sequence that is not an allele (gap row 89) | 4 |
+| `SUBMITTER_VARIANT_ID`, `DESCRIPTION`, `PHENOTYPE`, `EXTERNAL_LINKS` | INFO | 1, 1, ., . | String | no | `edge-cases.md` section 4c | 4 |
+| `CLNSIG` | INFO | . | String | no | clinical significance; the ClinVar/dbVar name, kept so that tools recognise it | 4 |
+| `AC`, `AN`, `SOMATIC` | INFO | A, 1, 0 | Integer, Integer, Flag | yes | `edge-cases.md` section 4c | 4 |
+| `GT` | FORMAT | 1 | String | yes | zygosity of the call's sample and the species' ploidy (rule 4) | 4 |
+| `CN` | FORMAT | 1 | Float | yes | copy number of the call's sample | 4 |
+
+Dropped: `PLACEMENTS` (encoded by `EVENT` and the record IDs), `SAMPLESET` (encoded by the sample column and the
+metadata), the validation experiment (metadata). Old names: `TYPESOID` → `VC`, `ASSERTM` → `REGION_ASSERTION_METHOD`,
+`PLACEMETHOD` → `PLACEMENT_METHOD`, `PARENT` → `PARENT_REGION_ACCESSION`, `PLACRANK` → `PLACEMENT_RANK`, `ALTSTATUS` →
+`PLACEMENT_ALT_STATUS`, `MUTORDER` → `MUTATION_ORDER`, `SVSEQ` → `SUBMITTED_SEQUENCE`, `SUBMITTED_TYPE` →
+`SUBMITTED_VARIANT_TYPE`, `VALIDMETH`/`VALIDRES` → `VALIDATED` (and `VALIDATION_RESULT` if needed).
 
 Header lines and INFO keys are written in the order of `vcf_keys.yaml`, and only the keys that a VCF uses are in its
 header.
@@ -44,10 +61,12 @@ header.
 ## Record rules
 
 1. **One VCF record per DGVa accession and placement**, with the accession (`esv`/`nsv`/`essv`/`nssv`) in the ID
-   column. Records at the same position are never merged.
+   column. Records at the same position are never merged. A variant with several distinct submitted placements on the
+   assembly is the exception (point 4 below): its best placement keeps the accession as ID, the others get
+   `<accession>_2`, `_3`..., and all carry `EVENT=<accession>`.
 2. **Regions and calls are both written, in separate VCFs for separate EVA analyses** (agreed 2026-11-19). The regions
    are DGVa's calls made on top of the submitted calls, not the raw submitted data, so they get their own analysis.
-   A call points at its region(s) with `PARENT`, and so does a region nested in another region (`estd1`, `estd20`,
+   A call points at its region(s) with `PARENT_REGION_ACCESSION`, and so does a region nested in another region (`estd1`, `estd20`,
    `estd59`). A call with no region (W1: `estd236`, `estd237`) has no `PARENT`. A withdrawn parent is left out of
    `PARENT`. See "File layout" below.
 3. **A value with no target fails the study.** The writer refuses a record whose type isn't in the allele table, or that
@@ -67,7 +86,7 @@ header.
    A species missing from the ploidy map fails the study when a genotype has to be written. Sex chromosomes aren't in
    the map: their ploidy depends on the sample's sex, which `Hemizygous` gives when the submitter recorded it.
    Sprint 3's files have no sample columns; reading the samples and zygosities is sprint 4.
-5. **Placement method.** `PLACEMETHOD` is written on each record whose method is not `Submitted genomic`
+5. **Placement method.** `PLACEMENT_METHOD` is written on each record whose method is not `Submitted genomic`
    (`Submitted cytogenetic`, `Submitted artifact`). For the 57 studies with no method at all, the header has
    `##DGVa_placement_method=unknown`.
 6. **Coordinates.**
@@ -132,7 +151,8 @@ Calls with no individual sample, and calls with several samples (agreed 2026-11-
   - **`GT`:** no zygosity is recorded for a pool, so rule 4 gives `1/.` (diploid): at least one copy in the pool
     carries the call.
   - **Only calls with no individual sample** are written for a pseudo-sample. A call linked to samples and to a
-    sampleset is written in its samples' files only, and `SAMPLESET` in INFO keeps the link.
+    sampleset is written in its samples' files only, and the metadata keeps the link to the sampleset (no INFO key:
+    point 5).
   - **The sample metadata must say what it is.** In the eva-sub-cli JSON, each pseudo-sample is a `bioSampleObject`
     (there is no BioSample accession for a sampleset). Its characteristics must say that it is not an individual:
     - a `description` of the form "DGVa sampleset <submitter ID> of study <study>: a pool of <SAMPLESET_SIZE>
@@ -164,9 +184,9 @@ Still open with this layout:
 
 | Choice | Proposal |
 |---|---|
-| Sequences that are not an allele (row 89) | INFO `SVSEQ` |
-| `PLACEMENTS` always, or only when not `Single` (row 116) | **Always**, when the database has a value. Leaving out a default hides the difference between "Single" and "no value". |
-| `SUBMITTED_TYPE` (rows 86, 108) | Only where it differs from the Exchange type beyond case and `_`/`-` |
+| Sequences that are not an allele (row 89) | INFO `SUBMITTED_SEQUENCE` |
+| `PLACEMENTS` always, or only when not `Single` (row 116) | **Dropped** (point 5): `EVENT` and the record IDs show the variants with several placements. |
+| `SUBMITTED_VARIANT_TYPE` (rows 86, 108) | Only where it differs from the Exchange type beyond case and `_`/`-` |
 | Placement method | Per line for non-default methods; header line for the null-method studies (rule 5) |
 
 ## Decisions on the representation
@@ -175,7 +195,8 @@ Still open with this layout:
 depend on the decisions below.
 
 These came out of checking the writer's output with vcf-validator, or have no answer in the gap table. Points 1–3 were
-decided on 2026-11-20 and are implemented. Points 4–6 are open.
+decided on 2026-11-20 and are implemented, as are points 4 and 5, decided the same day. Point 6 and the
+allele names of point 3 are open.
 
 1. **VCF version: 4.4 (decided).** 4.4 reserves the SV keys the gap table uses (`RUC`, `RUS`, `SVCLAIM`, `CNV:TR`).
    Its rules, which vcf-validator enforces and the writer follows:
@@ -197,7 +218,7 @@ decided on 2026-11-20 and are implemented. Points 4–6 are open.
 3. **Types with no VCF 4.4 symbolic allele: a symbolic allele the file defines (decided).** A record with a sequence
    is written from it, and a type that fits a VCF 4.4 allele uses that allele. Otherwise the type gets an allele defined
    in the `##ALT` header of each VCF that uses it, as VCF 4.4 allows. These can't have colon-separated subtypes (only
-   `DEL`, `INS`, `DUP`, `INV` and `CNV` can), and are written with `SVLEN=.`. The exact type stays in `TYPESOID`.
+   `DEL`, `INS`, `DUP`, `INV` and `CNV` can), and are written with `SVLEN=.`. The exact type stays in `VC`.
 
    | Types | Allele |
    |---|---|
@@ -210,7 +231,7 @@ decided on 2026-11-20 and are implemented. Points 4–6 are open.
    A translocation could be written exactly with breakend (`BND`) notation where DGVa has the mate's position and
    orientation (`VARIANT_MATE`, not read yet). That is a later ticket; `<TRA>` stays for the translocations without a
    mate, such as the `nstd83` regions that the reader positions from their supporting calls.
-4. **Duplicate IDs (open; leaning to a unique ID per placement).** A variant with two submitted placements on one
+4. **Variants with several placements (decided 2026-11-20; option C).** A variant with two submitted placements on one
    assembly gives two records with the same ID. vcf-validator 0.10.2 accepts this, but VCF 4.4 says no identifier
    should be present in more than one data record.
 
@@ -225,24 +246,15 @@ decided on 2026-11-20 and are implemented. Points 4–6 are open.
    | **b. Alternative locations of the same sequence** | `nstd116` (1,286), `nstd102` (4) | `nstd116` `nssv8640080` CNV: chr8:7,286,416–7,366,833 or chr8:7,669,242–7,740,180, the 8p23.1 segmental duplications. `nstd102` `nsv1398014` CNV: X:60,814–537,179 or Y:10,814–487,179, in PAR1. | The same variant, which can't be told apart between two copies of a sequence. |
    | **c. One variant in pieces** | `nstd10` (131), `nstd40` (2) | `nstd10` `nsv429273` CNV on CanFam2 (`GCF_000002285.1`): AAEX02001078.1:1,121–11,033 and AAEX02001079.1:1–321, two consecutive WGS contigs. `nstd40` `nsv482237` CNV, cytogenetic: 6:164.5–171.1 Mb and 11:130.8–135.0 Mb. | Parts of one variant: split across contigs, or two segments of one rearrangement. |
 
-   **Case a is written wrong today, not just with a repeated ID.** Each breakpoint becomes its own record of the whole
-   variant: `nstd133`'s 8 Mb deletion `nssv13659711` gives two 1 bp `<DEL>` records, and each translocation gives two
-   `<TRA>` records with no link between them (`edge-cases.md`, section 1b).
+   **Case a was written wrong, not just with a repeated ID**, until this decision: each breakpoint became its own
+   record of the whole variant (`nstd133`'s 8 Mb deletion `nssv13659711` gave two 1 bp `<DEL>` records, and each
+   translocation two unlinked `<TRA>` records).
 
-   **Options:**
-   - A. Keep one record per placement, with the accession as ID in each (as written today).
-   - B. Write only the `BestAvailable` placement; list the others in the DGVa JSON.
-   - C. **The developer's inclination (2026-11-20):** the best placement keeps the accession as its ID, so it is the one
-     shown first; each other placement gets an ID of its own and carries the accession in an INFO key (VCF 4.4 reserves
-     `DBVARID`, "ID of this element in DBVAR"). Nothing is hidden.
-
-   C fits each case:
-   - **b:** as described: the second location is kept, marked as secondary.
-   - **a:** VCF's own breakend notation needs exactly this: one record per breakend, each with its own ID, linked by
-     `MATEID`. So the translocations become a `BND` pair, using the two placements as the two ends (no need for
-     `VARIANT_MATE`), and a same-chromosome inversion or CNV given as two breakpoints becomes one record from the first
-     to the second. This turns the `BND` follow-up of point 3 into a sprint 4 need, since it concerns 70,125 variants.
-   - **c:** the larger piece keeps the accession; the other piece gets its own ID. An `EVENT` key could link the pieces.
+   **Options considered:** A, one record per placement with the accession as ID in each; B, only the `BestAvailable`
+   placement, the others in the DGVa JSON; C, the best placement keeps the accession as its ID and each other
+   placement gets an ID of its own, linked by an INFO key. **C was chosen**: nothing is hidden, and for breakpoints it
+   is what breakend notation needs anyway (one ID per breakend, linked by `MATEID`). VCF 4.4 also names `EVENT` for
+   "variant position ambiguity in segmentally duplicated regions", which is case b.
 
    **`VAR_PLAC_BREAKPOINT_ORDER` doesn't identify case a** (checked 2026-11-20 with `duplicate-placements`, which now
    prints a summary per study). Its values are `From` and `To` ("Links breakpoints using From and to"), not numbers.
@@ -287,27 +299,45 @@ decided on 2026-11-20 and are implemented. Points 4–6 are open.
    placements, or for inversions and CNVs from two single-base placements on one chromosome. The breakpoint order is
    worth writing where it exists.
 
-   Still to decide: the form of the extra IDs (for example `<accession>_2`), the INFO key for the accession, and how
-   the complex rearrangements with more than 2 breakpoints are written.
-5. **Key and allele names (open; to review one by one).** `TYPESOID`, `ASSERTM`, `PLACEMETHOD`, `PARENT`, `SAMPLESET`,
-   `VALIDMETH` and `VALIDRES` reuse the legacy DGVa VCF exporter's names where it had one. The rest (`HGVS`, `PLACRANK`,
-   `PLACEMENTS`, `CYTOBAND`, `MUTORDER`, `SUBMITTED_TYPE`, `ALTSTATUS`, `SVSEQ`) are new. The keys for the fields of
-   `edge-cases.md` section 4c have no name yet.
+   **Decision (2026-11-20), implemented in `reader.plan_multi_placements()` from `sql/multi_placement_variants.sql`:**
+   - IDs: the `BestAvailable` placement keeps the accession (the lowest placement ID if none is best); the others get
+     `<accession>_2`, `_3`... in placement ID order. DGVa accessions never contain `_`.
+   - `EVENT=<accession>` on every record of the variant; no `DBVARID`. `PLACEMENT_RANK` on each of them.
+   - **Translocation given as two single-base placements with both strands:** a breakend pair (`MATEID` both ways,
+     `EVENTTYPE=TRA`), orientation from the strands. With no breakpoint order, `From` is the lower position (natural
+     chromosome order, then position), as dbVar does.
+   - **Translocation with a strand `not reported` or missing:** two `<TRA>` records linked by `EVENT`,
+     `EVENTTYPE=TRA`.
+   - **Complex chromosomal rearrangement given as single-base placements, each with `From`/`To` and a strand:** one
+     single breakend per breakpoint (`From`: `+` → `T.`, `-` → `.T`; `To`: `+` → `.T`, `-` → `T.`), `EVENTTYPE=COMPLEX`,
+     declared in each VCF that uses it, as DRAGEN declares its own:
+     `##EVENTTYPE=<ID=COMPLEX,Description="Complex chromosomal rearrangement with several breakpoints, ...">`.
+     Without the order or a strand: `<CPX>` records linked by `EVENT`.
+   - **Any other type given as two single-base placements on one chromosome** (the `nstd133` inversions and CNVs): one
+     record from the first breakpoint to the second; the second placement goes on the side list as
+     `merged_breakpoint`.
+   - **Everything else** (alternative locations, pieces): one record per placement, linked by `EVENT`.
+   - Placements with identical coordinates (`estd208`) count once.
 
-   Guidelines for the review (developer, 2026-11-20):
+   vcf-validator 0.10.2 accepts the breakend pairs, the single breakends, `EVENT`/`EVENTTYPE`/`MATEID` with
+   `Number=A`, and the `##EVENTTYPE` line. It warns on a single breakend joined on its right (`.T`), whose ALT doesn't
+   start with REF by design.
+5. **Key names (decided 2026-11-20).** The names are in the key table above and in `etc/vcf_keys.yaml`. The rules
+   that produced them (developer, 2026-11-20):
    - **convertGVFtoVCF's names don't matter.** Only one of the two converters will be used.
-   - **Reuse what EVA already writes, before inventing.** For example, the EVA release writes the variant class as
-     `VC` ("Variant class according to the Sequence Ontology"), which `TYPESOID` duplicates. The release's other keys:
-     `SID` (studies that report a variant), `RS_VALIDATED`/`SS_VALIDATED` (validation), `REMAPPED`, `ALMM`, `ASMM` and
-     `LOE` (`eva-release-automation/publish_release_to_ftp/README_release_general_info.txt`). Check the other EVA
-     pipelines too, and the VCF 4.4 reserved keys (such as `DBVARID`, `DGVID`, `EVENT`, `MATEID`, `VALIDATED`).
-   - **Decide whether a property belongs to the variant or to the analysis.** Some per-variant values repeat a
-     property of the analysis (for example the placement method of a whole study, or the assertion method). Those go in
-     the metadata, and can also stay on the variant.
-   - **Long, descriptive names** rather than short, ambiguous ones.
-   - **Remove the keys whose value is already encoded elsewhere**, for example in the ALT allele, the ID, another key or
-     the metadata.
+   - **Reuse before inventing:** a VCF 4.4 reserved key first (`EVENT`, `EVENTTYPE`, `MATEID`, `VALIDATED`, `AC`,
+     `AN`, `SOMATIC`), then a key EVA already writes: the release's `VC` holds the SO accession of the variant class
+     (`VC=SO:0000159`), which replaces `TYPESOID`. The release's other keys (`SID`, `RS_VALIDATED`/`SS_VALIDATED`,
+     `REMAPPED`, `ALMM`, `ASMM`, `LOE`) describe clustered variants and have no DGVa equivalent.
+   - **Variant or analysis:** a property of the whole analysis goes in the metadata (the default placement method, the
+     assertion method when uniform, the validation experiment), and can also stay on the variant.
+   - **Long, descriptive names** rather than short, ambiguous ones. Exception: `CLNSIG`, the ClinVar/dbVar name, kept
+     so that tools recognise it.
+   - **No key for a value encoded elsewhere:** `PLACEMENTS` and `SAMPLESET` are dropped; strand and breakpoint order
+     are used to build breakends rather than written.
 
-   The allele names of point 3 are reviewed later in the ticket.
+   Still open: `PLACEMENT_ALT_STATUS` (drop it if it only repeats the rank), `VALIDATION_RESULT` (only if the results
+   say more than `VALIDATED`), and whether the experiment ID of a call goes on the variant or in the metadata. The
+   allele names of point 3 are reviewed later in the ticket.
 6. **The SO terms in use.** `symbolic_alleles.yaml` is keyed by the Exchange types of the XSD.
    `dgva-extraction check-types` compares it with `SEQUENCE_ONTOLOGY_CV` once the `SELECT`-only account exists.

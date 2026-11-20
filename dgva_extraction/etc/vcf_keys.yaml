@@ -11,10 +11,11 @@
 #   description: written in the header
 #   source:      where the value comes from in the DGVa database
 #   reserved:    true when the key is reserved by VCF 4.4 (its Number and Type follow the specification)
-#   status:      agreed (needed to write any SV VCF) or proposed (ticket 10: still to be reviewed)
+#   status:      agreed (ticket 10: name and definition decided) or proposed (still to be decided)
 #   sprint:      the sprint whose reader fills it (3: core fields; 4: gap fields)
 #
-# The open choices of ticket 10 and the proposals made here are listed in docs/vcf-representation.md.
+# The decisions of ticket 10 are in docs/vcf-representation.md. Naming rules (2026-11-20): a VCF 4.4 reserved key
+# first, then a key EVA already writes, then a new long, descriptive name; no key for a value encoded elsewhere.
 
 - key: END
   field: INFO
@@ -76,54 +77,94 @@
   status: agreed
   sprint: 3
 
-- key: TYPESOID
+- key: VC
   field: INFO
   number: 1
   type: String
-  description: Sequence Ontology ID of the DGVa variant type
-  source: VARIANT_REGION_TYPE_CV / VARIANT_CALL_TYPE_CV -> SEQUENCE_ONTOLOGY_CV.SEQUENCE_ONTOLOGY_ID
+  description: 'Variant class according to the Sequence Ontology'
+  source: 'VARIANT_REGION_TYPE_CV / VARIANT_CALL_TYPE_CV -> SEQUENCE_ONTOLOGY_CV.SEQUENCE_ONTOLOGY_ID. Same key, description and value format (an SO accession) as the EVA release'
   reserved: false
-  status: proposed
+  status: agreed
   sprint: 3
 
-- key: SUBMITTED_TYPE
+- key: SUBMITTED_VARIANT_TYPE
   field: INFO
   number: 1
   type: String
-  description: Variant type given by the submitter, when it differs from the DGVa type beyond case and separators
-  source: VARIANT_CALL.SUBMITTER_VARIANT_CALL_TYPE, VARIANT_REGION.SUBMITTER_VARIANT_REGION_TYPE (gap rows 86, 108)
+  description: 'Variant type given by the submitter, when it differs from the DGVa type beyond case and separators'
+  source: 'VARIANT_CALL.SUBMITTER_VARIANT_CALL_TYPE, VARIANT_REGION.SUBMITTER_VARIANT_REGION_TYPE (gap rows 86, 108)'
   reserved: false
-  status: proposed
+  status: agreed
   sprint: 4
 
-- key: PARENT
+- key: PARENT_REGION_ACCESSION
   field: INFO
   number: .
   type: String
-  description: DGVa accession of the variant region(s) this variant supports
-  source: LINKED_VARIANT (call to region, and region to region)
+  description: 'DGVa accession of the variant region(s) this variant supports'
+  source: 'LINKED_VARIANT (call to region, and region to region)'
   reserved: false
-  status: proposed
+  status: agreed
   sprint: 3
 
-- key: ASSERTM
+- key: REGION_ASSERTION_METHOD
   field: INFO
   number: 1
   type: String
-  description: Method by which the variant region is asserted from the supporting variant call(s)
-  source: VARIANT_REGION.VAR_REG_ASSERT_METHOD_ID -> VAR_REG_ASSERT_METHOD.ASSERTION_METHOD
+  description: 'Method by which the variant region is asserted from the supporting variant call(s)'
+  source: 'VARIANT_REGION.VAR_REG_ASSERT_METHOD_ID -> VAR_REG_ASSERT_METHOD.ASSERTION_METHOD. Also in the metadata when it is the same for the whole study (sprint 4)'
   reserved: false
-  status: proposed
+  status: agreed
   sprint: 3
 
-- key: PLACEMETHOD
+- key: PLACEMENT_METHOD
   field: INFO
   number: 1
   type: String
-  description: DGVa placement method, written when it is not Submitted genomic (for example Submitted cytogenetic, where the coordinates were computed by NCBI from the cytoband)
-  source: VARIANT_PLACEMENT_METHOD.VARIANT_PLACEMENT_METHOD
+  description: 'DGVa placement method, written when it is not Submitted genomic (for example Submitted cytogenetic, where the coordinates were computed by NCBI from the cytoband)'
+  source: 'VARIANT_PLACEMENT_METHOD.VARIANT_PLACEMENT_METHOD. The study default goes in the metadata (sprint 4)'
   reserved: false
-  status: proposed
+  status: agreed
+  sprint: 3
+
+- key: EVENT
+  field: INFO
+  number: A
+  type: String
+  description: 'ID of associated event'
+  source: 'The DGVa accession, on every record of a variant written as several records: alternative locations, pieces, breakend pairs and the breakpoints of complex rearrangements (ticket 10, point 4)'
+  reserved: true
+  status: agreed
+  sprint: 3
+
+- key: EVENTTYPE
+  field: INFO
+  number: A
+  type: String
+  description: 'Type of associated event'
+  source: 'TRA for translocations; COMPLEX (declared in a ##EVENTTYPE header line) for complex chromosomal rearrangements (ticket 10, point 4)'
+  reserved: true
+  status: agreed
+  sprint: 3
+
+- key: MATEID
+  field: INFO
+  number: A
+  type: String
+  description: 'ID of mate breakend'
+  source: 'The other breakpoint of a translocation submitted as two placements (ticket 10, point 4)'
+  reserved: true
+  status: agreed
+  sprint: 3
+
+- key: PLACEMENT_RANK
+  field: INFO
+  number: 1
+  type: String
+  description: 'DGVa placement rank on the assembly (BestAvailable, NotBest, Artifact)'
+  source: 'VAR_PLAC_PLACEMENT_RANK.PLACEMENT_RANK (gap row 115). Written on variants with several records from sprint 3; on every record from sprint 4'
+  reserved: false
+  status: agreed
   sprint: 3
 
 - key: CN
@@ -170,100 +211,150 @@
   field: INFO
   number: .
   type: String
-  description: HGVS name of the variant placement
-  source: VARIANT_PLACEMENT_HGVS.HGVS_NAME (gap row 106)
+  description: 'HGVS name of the variant placement'
+  source: 'VARIANT_PLACEMENT_HGVS.HGVS_NAME (gap row 106)'
   reserved: false
-  status: proposed
-  sprint: 4
-
-- key: PLACRANK
-  field: INFO
-  number: 1
-  type: String
-  description: DGVa placement rank on the assembly (BestAvailable, NotBest, Artifact)
-  source: VAR_PLAC_PLACEMENT_RANK.PLACEMENT_RANK (gap row 115)
-  reserved: false
-  status: proposed
-  sprint: 4
-
-- key: PLACEMENTS
-  field: INFO
-  number: 1
-  type: String
-  description: Number of placements of the variant on the assembly (Single or Multiple)
-  source: VAR_PLAC_PLACS_PER_ASSEM.PLACEMENTS_PER_ASSEMBLY (gap row 116)
-  reserved: false
-  status: proposed
+  status: agreed
   sprint: 4
 
 - key: CYTOBAND
   field: INFO
   number: 1
   type: String
-  description: Cytoband given by the submitter
-  source: VARIANT_PLACEMENT_CYTOBAND.CYTOBAND (gap row 105)
+  description: 'Cytoband given by the submitter'
+  source: 'VARIANT_PLACEMENT_CYTOBAND.CYTOBAND (gap row 105)'
   reserved: false
-  status: proposed
+  status: agreed
   sprint: 4
 
-- key: MUTORDER
+- key: MUTATION_ORDER
   field: INFO
   number: .
   type: Integer
-  description: Order of the mutation within a complex event
-  source: VAR_PLAC_MUTATION_ORDER, LINKED_VARIANT_MUTATION_ORDER (gap rows 52, 114)
+  description: 'Order of the mutation within a complex event'
+  source: 'VAR_PLAC_MUTATION_ORDER, LINKED_VARIANT_MUTATION_ORDER (gap rows 52, 114); 369 rows'
   reserved: false
-  status: proposed
+  status: agreed
   sprint: 4
 
-- key: ALTSTATUS
+- key: PLACEMENT_ALT_STATUS
   field: INFO
   number: 1
   type: String
-  description: DGVa alt status of the placement (Known or Ambiguous)
-  source: VARIANT_PLACEMENT_ALT_STATUS.ALT_STATUS (gap row 93)
+  description: 'DGVa alt status of the placement (Known or Ambiguous)'
+  source: 'VARIANT_PLACEMENT_ALT_STATUS.ALT_STATUS (gap row 93). Dropped if it only repeats PLACEMENT_RANK (to check)'
   reserved: false
-  status: proposed
+  status: agreed
   sprint: 4
 
-- key: SAMPLESET
+- key: VALIDATED
+  field: INFO
+  number: 0
+  type: Flag
+  description: 'Validated by follow-up experiment'
+  source: 'VARIANT_CALL_VALIDATION.VALIDATION_RESULT, when positive (gap row 91). The validation experiment goes in the metadata'
+  reserved: true
+  status: agreed
+  sprint: 4
+
+- key: VALIDATION_RESULT
   field: INFO
   number: .
   type: String
-  description: Submitter ID of the sampleset(s) in which the variant was seen
-  source: VARIANT_CALL_SAMPLESET -> DGVA_SAMPLESET.SUBMITTER_SAMPLESET_ID (gap row 88)
+  description: 'Result of each validation of the variant'
+  source: 'VARIANT_CALL_VALIDATION.VALIDATION_RESULT (gap row 91). Only if its values say more than VALIDATED'
   reserved: false
   status: proposed
   sprint: 4
 
-- key: VALIDMETH
-  field: INFO
-  number: .
-  type: String
-  description: Submitter ID of the experiment(s) used to validate the variant
-  source: VARIANT_CALL_VALIDATION.VALIDATION_EXPERIMENT_ID -> DGVA_EXPERIMENT.SUBMITTER_EXPERIMENT_ID (gap row 90)
-  reserved: false
-  status: proposed
-  sprint: 4
-
-- key: VALIDRES
-  field: INFO
-  number: .
-  type: String
-  description: Result of each validation, in the order of VALIDMETH
-  source: VARIANT_CALL_VALIDATION.VALIDATION_RESULT (gap row 91)
-  reserved: false
-  status: proposed
-  sprint: 4
-
-- key: SVSEQ
+- key: SUBMITTED_SEQUENCE
   field: INFO
   number: 1
   type: String
-  description: Sequence submitted for the variant that cannot be written as an allele
-  source: VARIANT_CALL_SEQUENCE.VARIANT_CALL_SEQ, when it is not an allele (gap row 89)
+  description: 'Sequence submitted for the variant that cannot be written as an allele'
+  source: 'VARIANT_CALL_SEQUENCE.VARIANT_CALL_SEQ, when it is not an allele (gap row 89)'
   reserved: false
-  status: proposed
+  status: agreed
+  sprint: 4
+
+- key: SUBMITTER_VARIANT_ID
+  field: INFO
+  number: 1
+  type: String
+  description: 'Identifier of the variant given by the submitter'
+  source: 'VARIANT_STUDY.SUBMITTER_VARIANT_ID (docs/edge-cases.md, section 4c)'
+  reserved: false
+  status: agreed
+  sprint: 4
+
+- key: DESCRIPTION
+  field: INFO
+  number: 1
+  type: String
+  description: 'Description of the variant given by the submitter'
+  source: 'VARIANT_DESCRIPTION (docs/edge-cases.md, section 4c)'
+  reserved: false
+  status: agreed
+  sprint: 4
+
+- key: PHENOTYPE
+  field: INFO
+  number: .
+  type: String
+  description: 'Phenotype(s) associated with the variant by the submitter'
+  source: 'Phenotype tables (docs/edge-cases.md, section 4c)'
+  reserved: false
+  status: agreed
+  sprint: 4
+
+- key: EXTERNAL_LINKS
+  field: INFO
+  number: .
+  type: String
+  description: 'Links to the variant in external databases'
+  source: 'Dbxref and support link tables (docs/edge-cases.md, section 4c)'
+  reserved: false
+  status: agreed
+  sprint: 4
+
+- key: CLNSIG
+  field: INFO
+  number: .
+  type: String
+  description: 'Clinical significance of the variant'
+  source: 'Clinical significance tables (docs/edge-cases.md, section 4c). Community name (ClinVar, dbVar) kept rather than a long one, so that tools recognise it'
+  reserved: false
+  status: agreed
+  sprint: 4
+
+- key: AC
+  field: INFO
+  number: A
+  type: Integer
+  description: 'Allele count in genotypes, for each ALT allele, in the same order as listed'
+  source: 'docs/edge-cases.md, section 4c'
+  reserved: true
+  status: agreed
+  sprint: 4
+
+- key: AN
+  field: INFO
+  number: 1
+  type: Integer
+  description: 'Total number of alleles in called genotypes'
+  source: 'docs/edge-cases.md, section 4c'
+  reserved: true
+  status: agreed
+  sprint: 4
+
+- key: SOMATIC
+  field: INFO
+  number: 0
+  type: Flag
+  description: 'Somatic mutation (for cancer genomics)'
+  source: 'Variant origin, when somatic (docs/edge-cases.md, section 4c)'
+  reserved: true
+  status: agreed
   sprint: 4
 
 - key: GT

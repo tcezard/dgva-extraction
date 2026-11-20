@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from dgva_extraction.keys import KeyTable, SymbolicAlleles, UnmappedValueError
-from dgva_extraction.record import VariantRecord
+from dgva_extraction.record import BreakendSide, VariantRecord
 from dgva_extraction.reference import Contig, Genome, ReferenceLookupError
 
 
@@ -44,6 +44,15 @@ HEADER_COLUMNS = ['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO']
 # VCF 4.4: the tandem repeat keys belong to <CNV:TR> records, which need RUS or RUL.
 TANDEM_REPEAT_ALLELE = 'CNV:TR'
 TANDEM_REPEAT_KEYS = {'RUC', 'RUS', 'RUL', 'RUB', 'RB', 'CIRUC', 'CIRB', 'RUEFF'}
+# EVENTTYPE values (VCF 4.4, section 5.6): the reserved ones, and the ones dgva-extraction defines, which each VCF
+# that uses them declares in a ##EVENTTYPE header line (ticket 10, point 4; as DRAGEN declares its own).
+RESERVED_EVENT_TYPES = frozenset({'DEL', 'DEL:ME', 'INS', 'INS:ME', 'DUP', 'DUP:TANDEM', 'DUP:DISPERSED', 'INV', 'TRA',
+                                  'TRA:BALANCED', 'TRA:UNBALANCED', 'CHROMOTHRIPSIS', 'CHROMOPLEXY', 'BFB',
+                                  'DOUBLEMINUTE'})
+DECLARED_EVENT_TYPES = {
+    'COMPLEX': 'Complex chromosomal rearrangement with several breakpoints, each written as a single breakend because '
+               'which breakpoints are joined is not given',
+}
 
 
 class RecordError(ValueError):
@@ -131,7 +140,11 @@ class VcfLineBuilder:
                                          or (interval.upper is not None and interval.upper < 0)):
                 raise RecordError('invalid_confidence_interval',
                                   f'{record.accession}: {name} {interval.vcf_values()} does not contain 0')
-        if record.sequence:
+        if record.breakend is not None:
+            pos, ref, alt = self._breakend_alleles(record, contig)
+            symbolic = None
+            is_tandem_repeat = False
+        elif record.sequence:
             if (ci_pos and not ci_pos.is_zero()) or (ci_end and not ci_end.is_zero()):
                 raise RecordError('imprecise_with_sequence',
                                   f'{record.accession}: a sequence-resolved allele cannot be imprecise')
@@ -178,11 +191,16 @@ class VcfLineBuilder:
                               f'<{TANDEM_REPEAT_ALLELE}> records (VCF 4.4), not on {alt}')
 
         if record.so_id:
-            info['TYPESOID'] = record.so_id
+            info['VC'] = record.so_id
         if record.parents:
-            info['PARENT'] = sorted(set(record.parents))
+            info['PARENT_REGION_ACCESSION'] = sorted(set(record.parents))
         if record.placement_method and record.placement_method != DEFAULT_PLACEMENT_METHOD:
-            info['PLACEMETHOD'] = record.placement_method
+            info['PLACEMENT_METHOD'] = record.placement_method
+        event_types = record.info.get('EVENTTYPE') or []
+        unknown_event_types = sorted(set(event_types) - RESERVED_EVENT_TYPES - set(DECLARED_EVENT_TYPES))
+        if unknown_event_types:
+            raise RecordError('unknown_event_type', f'{record.accession}: EVENTTYPE {unknown_event_types} is neither '
+                                                    f'reserved by VCF 4.4 nor declared by dgva-extraction')
         for key, value in record.info.items():
             if key in info:
                 raise RecordError('duplicate_key', f'{record.accession}: INFO {key} is set by the writer itself')
@@ -197,7 +215,29 @@ class VcfLineBuilder:
             format_keys, sample_values = self._format_samples(record)
         except UnmappedValueError as error:
             raise RecordError('unmapped_value', f'{record.accession}: {error}') from error
-        return VcfLine(contig, pos, record.accession, ref, alt, info_fields, format_keys, sample_values, symbolic)
+        return VcfLine(contig, pos, record.id, ref, alt, info_fields, format_keys, sample_values, symbolic)
+
+    def _breakend_alleles(self, record, contig):
+        """REF is the base at the breakpoint; ALT is in breakend notation (VCF 4.4, section 5.4)."""
+        breakend = record.breakend
+        if record.sequence or record.start != record.end:
+            raise RecordError('invalid_breakend', f'{record.accession}: a breakend is one base, with no sequence')
+        pos = record.start
+        base = normalise_reference(self.genome.fetch(contig, pos, pos))
+        if breakend.is_single:
+            alt = base + '.' if breakend.side == BreakendSide.LEFT else '.' + base
+        else:
+            try:
+                mate_contig = self.genome.contig(breakend.mate_chromosome)
+            except ReferenceLookupError as error:
+                raise RecordError('unknown_chromosome', f'{record.accession}: mate breakend: {error}') from error
+            if not 1 <= breakend.mate_position <= mate_contig.length:
+                raise RecordError('outside_contig', f'{record.accession}: mate breakend {breakend.mate_position} is '
+                                                    f'beyond the end of {mate_contig.vcf_name}')
+            bracket = '[' if breakend.mate_side == BreakendSide.RIGHT else ']'
+            mate = f'{bracket}{mate_contig.vcf_name}:{breakend.mate_position}{bracket}'
+            alt = base + mate if breakend.side == BreakendSide.LEFT else mate + base
+        return pos, base, alt
 
     def _check_coordinates(self, record, contig, end_is_pos):
         if record.start < 1:
@@ -324,6 +364,7 @@ class StudyVcfWriter:
         self._used_alleles = set()
         self._used_info = set()
         self._used_format = set()
+        self._used_event_types = set()
         self._finished = False
 
     def write(self, record: VariantRecord):
@@ -338,6 +379,7 @@ class StudyVcfWriter:
             self._used_alleles.add(line.symbolic_allele)
         self._used_info.update(key for key, _ in line.info)
         self._used_format.update(line.format_keys)
+        self._used_event_types.update(record.info.get('EVENTTYPE') or [])
         return line
 
     def refuse(self, record: VariantRecord, reason, message):
@@ -389,6 +431,8 @@ class StudyVcfWriter:
         for name in sorted(self._contigs, key=lambda contig_name: (self._contigs[contig_name].order, contig_name)):
             lines.append(f'##contig=<ID={name},length={self._contigs[name].length}>')
         lines.extend(self.builder.alleles.header_lines(self._used_alleles))
+        for event_type in sorted(self._used_event_types & set(DECLARED_EVENT_TYPES)):
+            lines.append(f'##EVENTTYPE=<ID={event_type},Description="{DECLARED_EVENT_TYPES[event_type]}">')
         for field_name, used in (('INFO', self._used_info), ('FORMAT', self._used_format)):
             lines.extend(vcf_key.header_line() for vcf_key in self.builder.key_table.keys(field_name)
                          if vcf_key.key in used)

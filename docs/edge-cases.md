@@ -8,7 +8,7 @@ and what it needs.
 - Remove an entry when the code handles the case and a test covers it, and say so in the commit.
 - `tests/test_edge_cases_list.py` fails if a refusal or side-list reason in the code is missing from this file.
 
-Last updated: 2026-11-20, after reading the duplicate placements (`dgva-extraction duplicate-placements`).
+Last updated: 2026-11-20, after implementing ticket 10's points 4 (variants with several placements) and 5 (key names).
 
 How the code treats a case today:
 - **Refused:** the writer refuses the record, and the whole study fails with no VCF. The statistics list each refusal.
@@ -28,41 +28,43 @@ How the code treats a case today:
 | `unknown_type` | A type not in `etc/symbolic_alleles.yaml` | `complex chromosomal rearrangement` was missing until 2026-11-20 | Run `dgva-extraction check-types` over the whole database, and add every type in use |
 | `missing_repeat_unit` | `<CNV:TR>` (short tandem repeat) with no `RUS` or `RUL` | Any tandem repeat until the repeat fields are read (sprint 4). `nstd128` has motifs on its regions only. | Read the motifs (sprint 4). Then decide what to do with calls that have a count but no motif. |
 | `repeat_key_without_tandem_repeat` | A repeat count on a record that isn't `<CNV:TR>` | `nstd128` calls (4.4 M) if their type isn't a tandem repeat: type not checked | Check `nstd128`'s types when the repeat fields are read (sprint 4) |
-| `sequence_not_allele` | A submitted sequence with characters other than A, C, G, T, N | Sequences aren't read yet (sprint 4) | Write it in `SVSEQ` instead (proposed) |
-| `alt_equals_ref` | A submitted sequence equal to the reference | Sequences aren't read yet | Decide: drop the sequence, or write it in `SVSEQ` |
-| `imprecise_with_sequence` | A sequence-resolved allele with non-zero confidence intervals | Sequences aren't read yet | Decide: symbolic allele with `SVSEQ`, or sequence without the intervals |
+| `sequence_not_allele` | A submitted sequence with characters other than A, C, G, T, N | Sequences aren't read yet (sprint 4) | Write it in `SUBMITTED_SEQUENCE` instead |
+| `alt_equals_ref` | A submitted sequence equal to the reference | Sequences aren't read yet | Decide: drop the sequence, or write it in `SUBMITTED_SEQUENCE` |
+| `imprecise_with_sequence` | A sequence-resolved allele with non-zero confidence intervals | Sequences aren't read yet | Decide: symbolic allele with `SUBMITTED_SEQUENCE`, or sequence without the intervals |
 | `unknown_chromosome` | A chromosome or contig name that matches neither the FASTA nor the assembly report | Not seen yet with a full FASTA. Includes `Submitted artifact` placements on unplaced contigs (45,964), whose names are untested. | The assembly FASTA and report for each assembly (pipeline, plan step 5.1); check contig names on an artifact study |
 | `outside_contig` | A position beyond the end of its sequence | Not seen yet. Possible with the GRCh37.p9/p13 naming mix-up. | Check against the right assembly version |
 | `invalid_coordinates` | End before start (not an insertion), or start below 1 | Not seen yet | Look at the case |
 | `invalid_confidence_interval` | A confidence interval that does not contain 0 | Not seen yet | Look at the case |
 | `invalid_reference_base` | A FASTA character that isn't a base or an IUPAC code | Not seen yet | Look at the FASTA |
-| `unmapped_value`, `duplicate_key` | A value with no key in `etc/vcf_keys.yaml`, or a key the writer sets itself | Only when new fields are added | Add the key (ticket 10 review) |
+| `unmapped_value`, `duplicate_key` | A value with no key in `etc/vcf_keys.yaml`, or a key the writer sets itself | Only when new fields are added | Add the key (ticket 10 naming rules) |
+| `invalid_breakend` | A breakend record that spans more than one base, or carries a sequence | A guard: the reader makes breakends only from single-base placements | Look at the case |
+| `unknown_event_type` | An `EVENTTYPE` that VCF 4.4 doesn't reserve and dgva-extraction doesn't declare | A guard: the reader writes `TRA` and `COMPLEX` only | Declare it in `DECLARED_EVENT_TYPES` (`vcf_writer.py`), which writes its `##EVENTTYPE` line |
 
 ## 1b. Approximated: written, with less than DGVa could give
 
-Decided in ticket 10 on 2026-11-20. Each is valid VCF 4.4; the exact type stays in `TYPESOID`.
+Decided in ticket 10 on 2026-11-20. Each is valid VCF 4.4; the exact type stays in `VC`.
 
 | Case | Written as | Where it occurs | What would make it exact |
 |---|---|---|---|
 | `SVCLAIM` on `<DEL>`/`<DUP>` from `deletion`, `duplication`, `tandem duplication` or the mobile element deletions, which don't say whether the call claims abundance or adjacency | `SVCLAIM=D` (abundance), the default: most DGVa technologies (arrays, read depth) measure abundance | `nstd83`: 15 deletions; most studies | Derive it from the study metadata, for example the detection method (sequencing calls may be `J` or `DJ`). A later ticket, if the gain is worth the cost. |
-| Translocations, inter- and intrachromosomal | `<TRA>`, defined in the file, with `SVLEN=.` | `estd236` (74 of its 89 rows), `nstd83` (20 call placements and 10 regions), and other studies | Breakend (`BND`) notation where DGVa has both ends: as two placements of the variant (section 1c: 70,125 variants), or as a mate (`VARIANT_MATE`, not read: section 4c). |
+| Translocations with one placement (the partner breakpoint isn't a placement of the variant) | `<TRA>`, defined in the file, with `SVLEN=.` | `estd236` (74 of its 89 rows), `nstd83` (20 call placements and 10 regions), and other studies | Breakend notation where DGVa has the mate (`VARIANT_MATE`, not read: section 4c). Translocations given as two placements are written as breakend pairs since 2026-11-20. |
+| Translocations given as two breakpoints with no breakpoint order | A breakend pair, `From` taken as the lower position (natural chromosome order, then position), as dbVar does. The orientation depends on that choice when the two strands differ. | `nstd115` (29,142 variants), `nstd107` (1,383), `nstd99` (1,077), and the `translocation` regions of `nstd106` (2,862) | The real breakpoint order; none is known. Decided 2026-11-20 (ticket 10, point 4). |
+| Translocations given as two breakpoints with strand `not reported` or missing | Two `<TRA>` records linked by `EVENT`, `EVENTTYPE=TRA`: breakend notation can't say the orientation is unknown | About 2,150 intrachromosomal translocations: `nstd106` (1,211), `nstd107` (461), `nstd99` (475); a few dozen with one strand missing | The strands; none is known |
+| Inversions and CNVs given as two single-base breakpoints on one chromosome | One record from the first breakpoint to the second; the second placement is on the side list (`merged_breakpoint`) | 140 variants in `nstd133` | Nothing, if the breakpoints are the variant's ends, as assumed |
+| Complex chromosomal rearrangements given as one placement per breakpoint | One single breakend per breakpoint (`T.` or `.T` from `From`/`To` and the strand), linked by `EVENT`, `EVENTTYPE=COMPLEX` (declared in a `##EVENTTYPE` line). Which breakpoints are joined is not given. | 245 variants in `nstd133`, 2 to 114 breakpoints each | The pairing of the breakpoints; none is known |
 | `complex chromosomal rearrangement`, `complex substitution`, `complex structural alteration` | `<CPX>`, defined in the file | `estd236`: 7 regions; others not counted | Nothing, unless a sequence is submitted (then written from it) |
 | `sequence alteration` | `<SEQALT>`, defined in the file | `estd1`: 25,193 calls | Nothing, unless a sequence is submitted |
 | `indel`, `delins` without a sequence | `<DELINS>`, defined in the file | not counted | The sequence, where DGVa has one (sprint 4) |
 | `copy-neutral loss of heterozygosity`, `loss of heterozygosity` | `<CNLOH>`, `<LOH>`, defined in the file | not counted | Nothing |
 
-The names of the alleles the files define are part of ticket 10's open point 5 (key names), for review.
+The names of the alleles the files define are reviewed later in ticket 10.
 
 ## 1c. Written wrong: valid VCF that misstates the variant
 
-Found on 2026-11-20 by `dgva-extraction duplicate-placements`; see `docs/vcf-representation.md`, open point 4.
-
-| Case | Written as today | Where it occurs | What it needs |
-|---|---|---|---|
-| A rearrangement submitted as two single-base placements, one per breakpoint, on one assembly: translocations, and some inversions and CNVs | Two records with the same ID, each a whole variant of 1 bp: `nssv13659711`, an 8 Mb deletion on chr14, becomes two 1 bp `<DEL>`; a translocation becomes two unlinked `<TRA>` | 70,125 variants: `nstd115` (58,284), `nstd106` (5,752), `nstd107` (2,766), `nstd99` (2,154), `nstd133` (1,167), `estd210` (2) | Ticket 10 point 4. Translocations: a `BND` pair, one record per breakend with its own ID and `MATEID`. Same-chromosome inversions and CNVs: one record from the first breakpoint to the second. `VAR_PLAC_BREAKPOINT_ORDER` (`From`/`To`) is on only 3,674 of these variants (`nstd106`, `nstd133`, `estd210`), so it can't be used to recognise them. The join orientation comes from the two strands once `From` is known (matches dbVar's VCFs exactly); without a breakpoint order (`nstd99`, `nstd107`, `nstd115`), `From` would be the lower position, as dbVar assumes. Strand `not reported` or missing (about 2,150 intrachromosomal translocations in `nstd106`, `nstd107`, `nstd99`): orientation unknown. |
-| A complex chromosomal rearrangement submitted as one single-base placement per breakpoint, each `From` or `To` | 2 to 114 records with the same ID, each a 1 bp `<CPX>` | 245 variants in `nstd133` (for example `nsv2781790`: 6 breakpoints on chromosomes 1 and 3) | A representation of a multi-breakpoint event: which `From` joins which `To` isn't given by the breakpoint order. Ticket 10 point 4. |
-| Alternative locations of one variant (segmental duplications, PAR) | Two records with the same ID | 1,290 variants: `nstd116` (1,286, 8p23.1), `nstd102` (4, PAR1 on X and Y) | Ticket 10 point 4 (inclination: the best placement keeps the accession as ID, the other gets its own ID) |
-| One variant in pieces: across two consecutive WGS contigs, or two segments of one cytogenetic event | Two records with the same ID, each looking like a whole variant | 133 variants: `nstd10` (131, CanFam2 contigs), `nstd40` (2) | Ticket 10 point 4; perhaps an `EVENT` key linking the pieces |
+None known. The variants with several submitted placements on one assembly (71,548 in 10 studies), found on
+2026-11-20, were written as several records with the same ID, each a whole variant. Since ticket 10's point 4 they
+are written as breakend pairs, single breakends, one spanning record, or records linked by `EVENT`; the remaining
+approximations are in section 1b. Not yet run on the database: see section 5.
 
 ## 2. Study fails in the reader (guards; none seen in the data)
 
@@ -84,6 +86,7 @@ Found on 2026-11-20 by `dgva-extraction duplicate-placements`; see `docs/vcf-rep
 | `no_end` | No stop, outer stop or inner stop, on a type that isn't an insertion | not counted | Look at the cases |
 | `duplicate_placement` | Identical placements of one accession, written once | `estd208`: 169 variants × 5 placements | Find which assembly they are on (ticket 13, not done) |
 | `positioned_from_calls` | A translocation region with no placement of its own, positioned from its first supporting call. It is listed so that the derived position is visible. | `nstd83`: 10 regions | Written as `<TRA>` (section 1b); `BND` will need both calls' positions |
+| `merged_breakpoint` | The second breakpoint of an inversion or CNV given as two single-base placements on one chromosome: written as the end of the record of the first | 140 variants in `nstd133` | Nothing: listed so that the merge is visible |
 | (study side list) `withdrawn`, `remapped_only`, `no_position_only`, `no_placement` | Variants in no VCF | 101,575 withdrawn; 976 remapped-only (`nstd35`); 751 with no position only; 112 with no placement (`estd180`, `nstd83`) | Nothing: the DGVa JSON lists them (sprint 4). The remapped placements go to the remappings file (D3). |
 
 ## 4. Not read: silent losses until they are added
@@ -138,6 +141,7 @@ the metadata work (plan step 4).
 
 | Assumption | Risk if wrong | How to check |
 |---|---|---|
+| The multi-placement plan (ticket 10, point 4) on real data: `multi_placement_variants.sql`, the breakend pairs and the merged breakpoints | A wrong orientation or pairing, or a study failing on a case not foreseen | Extract `nstd106`, `nstd133` and `nstd107` and compare their breakends with dbVar's VCFs (they matched the strand rule exactly) |
 | An insertion's sequence goes before `start` (`POS` = start − 1), as convertGVFtoVCF assumes | Insertions off by one | Compare with the Exchange XML or dbVar for a few insertions |
 | The database sorts chromosome names like Python does (binary collation) | The translocation regions merged into the stream arrive out of order, and the writer stops (`OrderError`). Nothing is written wrong. | A run on a study with translocation regions on several chromosomes |
 | The reader's ordering keeps memory flat on large studies | Out-of-memory error, or slow runs | `estd214`: run time and peak memory (ticket 13.6). Note the unexplained 552 s run of `estd236`. |
@@ -152,4 +156,4 @@ the metadata work (plan step 4).
 | Sprint 3 decision 3: the 32,192 variants only in `VARIANT_STUDY_NEW` | Open; recommended: leave out | Not read, so nothing to change if the recommendation holds |
 | Sprint 3 decision 4: the 2 live `estd214` chrY regions (`esv3818028`, `esv3817941`) | Open; recommended: treat as withdrawn | **Not implemented: the reader writes them today.** Needs an exclusion list if the recommendation is taken. |
 | Ticket 10 points 1–3: VCF 4.4; `SVCLAIM` defaults to `D`; types with no VCF allele get one the file defines | Decided 2026-11-20 | Implemented; see section 1b |
-| Ticket 10 open points 4–5 (duplicate IDs, key and allele names) | Open; point 4 leaning to a unique ID per placement, with the best placement keeping the accession | See sections 1, 1b, 1c and 4 |
+| Ticket 10 points 4–5: variants with several placements (best placement keeps the accession, `EVENT` links the records, breakends for breakpoints); key names | Decided 2026-11-20 | Implemented, unit-tested; not yet run on the database (section 5). Allele names: open. |
