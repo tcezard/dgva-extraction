@@ -1,0 +1,53 @@
+[build-system]
+requires = [
+    "setuptools >= 64",
+    "setuptools_scm[toml] >= 8",
+    "wheel >= 0.29.0",
+]
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = 'dgva_extraction'
+description = 'EBI EVA - Extract DGVa structural variants from the DGVa database into VCF, for migration into EVA'
+dynamic = ['version']
+readme = 'README.md'
+requires-python = '>=3.9'
+dependencies = [
+    'ebi-eva-common-pyutils >= 1.0.0',
+    'oracledb >= 2.0',
+    'PyYAML >= 6.0',
+]
+classifiers = [
+    'Development Status :: 2 - Pre-Alpha',
+    'Environment :: Console',
+    'Intended Audience :: Science/Research',
+    'Natural Language :: English',
+    'Operating System :: POSIX :: Linux',
+    'Operating System :: MacOS :: MacOS X',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Topic :: Scientific/Engineering :: Bio-Informatics',
+    'Topic :: File Formats',
+    'License :: OSI Approved :: Apache Software License',
+]
+
+[project.optional-dependencies]
+test = ['pytest']
+
+[project.scripts]
+'dgva-extraction' = 'dgva_extraction.cli:main'
+
+[tool.setuptools]
+packages = ['dgva_extraction']
+
+[tool.setuptools.package-data]
+'dgva_extraction' = ['sql/*.sql', 'etc/*.yaml']
+
+[tool.setuptools_scm]
+write_to = 'dgva_extraction/_version.py'
+fallback_version = '0.0.0'
+
+[tool.pytest.ini_options]
+testpaths = ['tests']

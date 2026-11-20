@@ -1,0 +1,29 @@
+# Ploidy per species, used to write a call's genotype from its zygosity (dgva_extraction/genotype.py).
+#
+# Keyed by NCBI taxonomy ID (GENOME_ASSEMBLY.ASSEMBLY_TAXONOMY_ID). A species missing from this map fails the study
+# when a genotype has to be written, so the map stays explicit. Check it against the taxonomy IDs in the output of
+# `dgva-extraction list-studies` (column assembly_taxonomy_id).
+#
+#   name:        for readers only
+#   ploidy:      ploidy of the nuclear chromosomes
+#   chromosomes: exceptions, by chromosome name as in the VCF (mitochondrion and chloroplast are haploid)
+#
+# Sex chromosomes are not listed: their ploidy depends on the sample's sex, which the zygosity (Hemizygous) gives
+# when the submitter recorded it.
+
+9606: {name: Homo sapiens, ploidy: 2, chromosomes: {MT: 1, chrM: 1, M: 1}}
+9598: {name: Pan troglodytes, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9593: {name: Gorilla gorilla, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9600: {name: Pongo pygmaeus, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9601: {name: Pongo abelii, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9544: {name: Macaca mulatta, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+60711: {name: Chlorocebus sabaeus, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+10090: {name: Mus musculus, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9913: {name: Bos taurus, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9823: {name: Sus scrofa, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9940: {name: Ovis aries, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9615: {name: Canis lupus familiaris, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9031: {name: Gallus gallus, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+7955: {name: Danio rerio, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+7227: {name: Drosophila melanogaster, ploidy: 2, chromosomes: {mitochondrion_genome: 1, chrM: 1}}
+39947: {name: Oryza sativa Japonica Group, ploidy: 2, chromosomes: {Mt: 1, Pt: 1}}

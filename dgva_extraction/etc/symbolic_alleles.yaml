@@ -1,0 +1,59 @@
+# Symbolic ALT allele for each DGVa variant type (sprint 3, ticket 10).
+#
+# Keyed by the Sequence Ontology term name, normalised (lower case; spaces and hyphens become underscores). The names
+# are the Exchange variant types of dgva-pipeline/resources/ExchangeXSDs/Exchange.xsd; the SO terms actually used are
+# listed by `dgva-extraction check-types`.
+#
+# A record with a sequence is written with explicit REF and ALT bases, whatever its type. Without one, it gets its
+# type's symbolic allele (ticket 10, decided 2026-11-20):
+#   - one VCF 4.4 defines (DEL, INS, DUP, INV, CNV and their subtypes) where the type fits it;
+#   - otherwise one defined here, written in the ##ALT header of each VCF that uses it. VCF 4.4 allows this. These
+#     can't have colon-separated subtypes (only the VCF types can), and are written with SVLEN=.
+#     Naming rule (decided 2026-11-20): the SO term name in upper case, one allele per term; except the translocations,
+#     which share TRA, the name VCF 4.4 reserves as an EVENTTYPE.
+# The exact type is also in VC.
+#
+#   allele:      the symbolic allele, without brackets; null refuses the record, which fails the study
+#   end_is_pos:  true for insertions, whose END is POS (the inserted sequence has no length on the reference)
+#   description: written in the ##ALT header line
+#   svclaim:     the VCF 4.4 SVCLAIM (needed on DEL and DUP alleles) when the type says it; otherwise the writer
+#                writes the default, D (abundance)
+#
+# The ALT description of a subtype names the subtype, so the header is the same whichever type uses it first.
+
+copy_number_gain: {allele: DUP, end_is_pos: false, description: Duplication, svclaim: D}
+duplication: {allele: DUP, end_is_pos: false, description: Duplication}
+tandem_duplication: {allele: DUP:TANDEM, end_is_pos: false, description: Tandem duplication}
+copy_number_loss: {allele: DEL, end_is_pos: false, description: Deletion, svclaim: D}
+deletion: {allele: DEL, end_is_pos: false, description: Deletion}
+mobile_element_deletion: {allele: DEL:ME, end_is_pos: false, description: Deletion of a mobile element}
+alu_deletion: {allele: DEL:ME:ALU, end_is_pos: false, description: Deletion of an ALU element}
+line1_deletion: {allele: DEL:ME:LINE1, end_is_pos: false, description: Deletion of a LINE1 element}
+sva_deletion: {allele: DEL:ME:SVA, end_is_pos: false, description: Deletion of an SVA element}
+herv_deletion: {allele: DEL:ME:HERV, end_is_pos: false, description: Deletion of an HERV element}
+copy_number_variation: {allele: CNV, end_is_pos: false, description: Copy number variable region}
+short_tandem_repeat_variation: {allele: CNV:TR, end_is_pos: false, description: Tandem repeat determined based on DNA abundance}
+short_tandem_repeat: {allele: CNV:TR, end_is_pos: false, description: Tandem repeat determined based on DNA abundance}
+inversion: {allele: INV, end_is_pos: false, description: Inversion}
+insertion: {allele: INS, end_is_pos: true, description: Insertion}
+novel_sequence_insertion: {allele: INS, end_is_pos: true, description: Insertion}
+mobile_element_insertion: {allele: INS:ME, end_is_pos: true, description: Insertion of a mobile element}
+alu_insertion: {allele: INS:ME:ALU, end_is_pos: true, description: Insertion of an ALU element}
+line1_insertion: {allele: INS:ME:LINE1, end_is_pos: true, description: Insertion of a LINE1 element}
+sva_insertion: {allele: INS:ME:SVA, end_is_pos: true, description: Insertion of an SVA element}
+herv_insertion: {allele: INS:ME:HERV, end_is_pos: true, description: Insertion of an HERV element}
+
+# No VCF 4.4 allele: defined by the files that use them.
+# Translocations: written in breakend notation when DGVa gives both breakpoints with their strands (ticket 10, point 4);
+# <TRA> for the others.
+interchromosomal_translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
+intrachromosomal_translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
+translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
+complex_structural_alteration: {allele: COMPLEX_STRUCTURAL_ALTERATION, end_is_pos: false, description: Complex structural alteration of the region}
+complex_chromosomal_rearrangement: {allele: COMPLEX_CHROMOSOMAL_REARRANGEMENT, end_is_pos: false, description: Complex chromosomal rearrangement of the region}
+complex_substitution: {allele: COMPLEX_SUBSTITUTION, end_is_pos: false, description: Complex substitution in the region; the sequence is not given}
+sequence_alteration: {allele: SEQUENCE_ALTERATION, end_is_pos: false, description: Change of the sequence of the region; the kind of change is not given}
+indel: {allele: INDEL, end_is_pos: false, description: Deletion of the region and insertion of a sequence that is not given}
+delins: {allele: DELINS, end_is_pos: false, description: Deletion of the region and insertion of a sequence that is not given}
+copy_number_neutral_loss_of_heterozygosity: {allele: COPY_NUMBER_NEUTRAL_LOSS_OF_HETEROZYGOSITY, end_is_pos: false, description: Copy-number neutral loss of heterozygosity}
+loss_of_heterozygosity: {allele: LOSS_OF_HETEROZYGOSITY, end_is_pos: false, description: Loss of heterozygosity}
