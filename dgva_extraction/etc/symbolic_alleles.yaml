@@ -9,7 +9,9 @@
 #   - one VCF 4.4 defines (DEL, INS, DUP, INV, CNV and their subtypes) where the type fits it;
 #   - otherwise one defined here, written in the ##ALT header of each VCF that uses it. VCF 4.4 allows this. These
 #     can't have colon-separated subtypes (only the VCF types can), and are written with SVLEN=.
-# The exact type is kept in VC, so several types can share an allele.
+#     Naming rule (decided 2026-11-20): the SO term name in upper case, one allele per term; except the translocations,
+#     which share TRA, the name VCF 4.4 reserves as an EVENTTYPE.
+# The exact type is also in VC.
 #
 #   allele:      the symbolic allele, without brackets; null refuses the record, which fails the study
 #   end_is_pos:  true for insertions, whose END is POS (the inserted sequence has no length on the reference)
@@ -47,11 +49,11 @@ herv_insertion: {allele: INS:ME:HERV, end_is_pos: true, description: Insertion o
 interchromosomal_translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
 intrachromosomal_translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
 translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
-complex_structural_alteration: {allele: CPX, end_is_pos: false, description: Complex rearrangement of the region}
-complex_chromosomal_rearrangement: {allele: CPX, end_is_pos: false, description: Complex rearrangement of the region}
-complex_substitution: {allele: CPX, end_is_pos: false, description: Complex rearrangement of the region}
-sequence_alteration: {allele: SEQALT, end_is_pos: false, description: Change of the sequence of the region; the kind of change is not given}
-indel: {allele: DELINS, end_is_pos: false, description: Deletion of the region and insertion of a sequence that is not given}
+complex_structural_alteration: {allele: COMPLEX_STRUCTURAL_ALTERATION, end_is_pos: false, description: Complex structural alteration of the region}
+complex_chromosomal_rearrangement: {allele: COMPLEX_CHROMOSOMAL_REARRANGEMENT, end_is_pos: false, description: Complex chromosomal rearrangement of the region}
+complex_substitution: {allele: COMPLEX_SUBSTITUTION, end_is_pos: false, description: Complex substitution in the region; the sequence is not given}
+sequence_alteration: {allele: SEQUENCE_ALTERATION, end_is_pos: false, description: Change of the sequence of the region; the kind of change is not given}
+indel: {allele: INDEL, end_is_pos: false, description: Deletion of the region and insertion of a sequence that is not given}
 delins: {allele: DELINS, end_is_pos: false, description: Deletion of the region and insertion of a sequence that is not given}
-copy_number_neutral_loss_of_heterozygosity: {allele: CNLOH, end_is_pos: false, description: Copy-neutral loss of heterozygosity}
-loss_of_heterozygosity: {allele: LOH, end_is_pos: false, description: Loss of heterozygosity}
+copy_number_neutral_loss_of_heterozygosity: {allele: COPY_NUMBER_NEUTRAL_LOSS_OF_HETEROZYGOSITY, end_is_pos: false, description: Copy-number neutral loss of heterozygosity}
+loss_of_heterozygosity: {allele: LOSS_OF_HETEROZYGOSITY, end_is_pos: false, description: Loss of heterozygosity}

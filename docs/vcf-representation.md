@@ -10,8 +10,38 @@ Those two files are the single source: the writer builds the header from them, c
 refuses any value they don't list. Each key has its `Number`, `Type`, `Description`, database source, whether VCF
 4.4 reserves it, its status and the sprint whose reader fills it.
 
-The proposals were checked with vcf-validator 0.10.2 on VCFs written by the writer (`tests/test_vcf_writer.py`,
-`tests/test_cli.py`). They have **not** been run through eva-sub-cli validation yet (ticket 10, step 4).
+The representation is checked with vcf-validator 0.10.2 on VCFs written by the writer (`tests/test_vcf_writer.py`,
+`tests/test_cli.py`), and passed **eva-sub-cli validation** on 2026-11-20 (see "eva-sub-cli validation" below).
+
+## eva-sub-cli validation (ticket 10, step 4; 2026-11-20)
+
+eva-sub-cli 0.7.2.dev4 (local clone at `2cd9731`), run natively (Nextflow, vcf-validator, vcf-assembly-checker,
+biovalidator), on a test submission written by dgva-extraction's writer on GRCh37 chromosomes 21 and 22:
+- a regions VCF with no samples (`AF=.`): `<DEL>` with `SVCLAIM` and confidence intervals, `<DUP:TANDEM>`, `<CNV>`,
+  `<INV>`, `<INS:ME>`, the alleles the file defines (`<COMPLEX_CHROMOSOMAL_REARRANGEMENT>`, `<SEQUENCE_ALTERATION>`,
+  `<LOSS_OF_HETEROZYGOSITY>`, `<TRA>`), alternative locations linked by `EVENT` with `PLACEMENT_RANK`, a `<TRA>` pair
+  linked by `EVENT`, region-to-region `PARENT_REGION_ACCESSION`;
+- a sampleset pseudo-sample calls VCF (`GT` 0/1, 1/1, 1/.): `<DEL>`, `<DUP>`, a sequence-resolved insertion, a
+  breakend pair with `MATEID`, single breakends with `EVENTTYPE=COMPLEX` and its `##EVENTTYPE` line,
+  `VALIDATION_RESULT=V1:Pass,V2:Fail`.
+
+Result: **SUCCESS**. vcf-validator (inside eva-sub-cli): no error in either file; assembly check: 13/13 and 7/7 REF
+alleles match; evidence types detected as designed (`allele_frequency` for the regions, `genotype` for the calls);
+sample names concordant; FASTA sequences INSDC, compatible with `GCA_000001405.1`.
+
+The first run failed on the **metadata** only, which says what the sprint 4 metadata must do:
+- **Every analysis needs at least one sample**, even with `allele_frequency` evidence and no sample column ("No
+  sample found for the analysis"). The regions analysis, and the calls analysis of a study with no samples or
+  samplesets, must list samples without `sampleInVCF`: the study's samples or pseudo-samples. A study with no sample
+  at all needs a study-level pseudo-sample in the metadata (open).
+- **A pseudo-sample's `bioSampleObject` needs the ERC000011 fields** `collection date` and `geographic location
+  (country and/or sea)`; the missing-value term `not provided` is accepted.
+- The Data Access & Sharing statement must be acknowledged (`statements`), as for any submission.
+- `fileSize` given in the metadata JSON came out empty after eva-sub-cli's formatting step and failed the schema
+  ("must be number"); leaving out `fileSize` and `md5` lets eva-sub-cli compute them. A tool quirk to report.
+
+Not covered: the sprint 4 keys (no values yet), `experimentType` (a fixed list: the DGVa method types need a mapping)
+and `platform` (one string per analysis).
 
 ## Keys
 
@@ -40,8 +70,7 @@ long, descriptive name; no key for a value encoded elsewhere. `etc/vcf_keys.yaml
 | `HGVS`, `CYTOBAND` | INFO | ., 1 | String | no | `VARIANT_PLACEMENT_HGVS`, `VARIANT_PLACEMENT_CYTOBAND` | 4 |
 | `MUTATION_ORDER` | INFO | . | Integer | no | `VAR_PLAC_MUTATION_ORDER` (369 rows) | 4 |
 | `PLACEMENT_ALT_STATUS` | INFO | 1 | String | no | `VARIANT_PLACEMENT_ALT_STATUS` (`nstd19` only); not a repeat of the rank (point 5) | 4 |
-| `VALIDATED` | INFO | 0 | Flag | yes | a positive validation result; the validation experiment goes in the metadata | 4 |
-| `VALIDATION_RESULT` | INFO | . | String | no | only if the results say more than `VALIDATED` (proposed) | 4 |
+| `VALIDATION_RESULT` | INFO | . | String | no | `<experiment description ID>:<result>` (`Pass`, `Fail`, `Inconclusive`), one per validation; replaces the reserved `VALIDATED` (point 5) | 4 |
 | `SUBMITTED_SEQUENCE` | INFO | 1 | String | no | a sequence that is not an allele (gap row 89) | 4 |
 | `SUBMITTER_VARIANT_ID`, `DESCRIPTION`, `PHENOTYPE`, `EXTERNAL_LINKS` | INFO | 1, 1, ., . | String | no | `edge-cases.md` section 4c | 4 |
 | `CLNSIG` | INFO | . | String | no | clinical significance; the ClinVar/dbVar name, kept so that tools recognise it | 4 |
@@ -53,7 +82,7 @@ Dropped: `PLACEMENTS` (encoded by `EVENT` and the record IDs), `SAMPLESET` (enco
 metadata), the validation experiment (metadata). Old names: `TYPESOID` → `VC`, `ASSERTM` → `REGION_ASSERTION_METHOD`,
 `PLACEMETHOD` → `PLACEMENT_METHOD`, `PARENT` → `PARENT_REGION_ACCESSION`, `PLACRANK` → `PLACEMENT_RANK`, `ALTSTATUS` →
 `PLACEMENT_ALT_STATUS`, `MUTORDER` → `MUTATION_ORDER`, `SVSEQ` → `SUBMITTED_SEQUENCE`, `SUBMITTED_TYPE` →
-`SUBMITTED_VARIANT_TYPE`, `VALIDMETH`/`VALIDRES` → `VALIDATED` (and `VALIDATION_RESULT` if needed).
+`SUBMITTED_VARIANT_TYPE`, `VALIDMETH`/`VALIDRES` → `VALIDATION_RESULT` (the reserved `VALIDATED` flag is not used).
 
 Header lines and INFO keys are written in the order of `vcf_keys.yaml`, and only the keys that a VCF uses are in its
 header.
@@ -121,7 +150,9 @@ Only the key's presence is checked (`file_utils.py:91-105`). Its own detection, 
 `AF=.` on every line as `allele_frequency`, and files with `GT=.` or `GT=1/.` as `genotype`. vcf-validator 0.10.2
 accepts all three.
 
-Per study and submitted assembly:
+Per study and submitted assembly. The calls are further split by discovery description (point 5 of the decisions:
+one calls analysis per merged experiment description, 2026-11-20); the files below are per calls analysis, with the
+description ID in their name (for example `<study>_<assembly>_<description>.calls.vcf`) when the study has several.
 
 | VCF | Records | Evidence type | EVA analysis |
 |---|---|---|---|
@@ -195,8 +226,8 @@ Still open with this layout:
 depend on the decisions below.
 
 These came out of checking the writer's output with vcf-validator, or have no answer in the gap table. Points 1–3 were
-decided on 2026-11-20 and are implemented, as are points 4 and 5, decided the same day. Point 6 and the
-allele names of point 3 are open.
+decided on 2026-11-20 and are implemented, as are points 4 and 5 and the allele names of point 3, decided the same
+day. Point 6 is open.
 
 1. **VCF version: 4.4 (decided).** 4.4 reserves the SV keys the gap table uses (`RUC`, `RUS`, `SVCLAIM`, `CNV:TR`).
    Its rules, which vcf-validator enforces and the writer follows:
@@ -220,17 +251,23 @@ allele names of point 3 are open.
    in the `##ALT` header of each VCF that uses it, as VCF 4.4 allows. These can't have colon-separated subtypes (only
    `DEL`, `INS`, `DUP`, `INV` and `CNV` can), and are written with `SVLEN=.`. The exact type stays in `VC`.
 
+   **Names (decided 2026-11-20): the SO term name in upper case, one allele per term**, so that the allele alone says
+   the type; except the translocations, which share `<TRA>`, the name VCF 4.4 reserves as an `EVENTTYPE`. The rule
+   also avoids short names other tools give a narrower meaning (GATK-SV's `<CPX>`).
+
    | Types | Allele |
    |---|---|
-   | inter- and intrachromosomal translocation | `<TRA>` |
-   | complex structural alteration, complex chromosomal rearrangement, complex substitution | `<CPX>` |
-   | sequence alteration (`estd1`: 25,193 calls) | `<SEQALT>` |
-   | `indel`, `delins` without a sequence | `<DELINS>` |
-   | copy-neutral loss of heterozygosity; loss of heterozygosity | `<CNLOH>`; `<LOH>` |
+   | translocation, interchromosomal translocation, intrachromosomal translocation | `<TRA>` |
+   | complex structural alteration | `<COMPLEX_STRUCTURAL_ALTERATION>` |
+   | complex chromosomal rearrangement | `<COMPLEX_CHROMOSOMAL_REARRANGEMENT>` |
+   | complex substitution | `<COMPLEX_SUBSTITUTION>` |
+   | sequence alteration (`estd1`: 25,193 calls) | `<SEQUENCE_ALTERATION>` |
+   | `indel`, `delins` without a sequence | `<INDEL>`, `<DELINS>` |
+   | copy-number neutral loss of heterozygosity | `<COPY_NUMBER_NEUTRAL_LOSS_OF_HETEROZYGOSITY>` |
+   | loss of heterozygosity | `<LOSS_OF_HETEROZYGOSITY>` |
 
-   A translocation could be written exactly with breakend (`BND`) notation where DGVa has the mate's position and
-   orientation (`VARIANT_MATE`, not read yet). That is a later ticket; `<TRA>` stays for the translocations without a
-   mate, such as the `nstd83` regions that the reader positions from their supporting calls.
+   Translocations given as two placements are written in breakend notation (point 4); `<TRA>` stays for the others,
+   such as the `nstd83` regions that the reader positions from their supporting calls, until `VARIANT_MATE` is read.
 4. **Variants with several placements (decided 2026-11-20; option C).** A variant with two submitted placements on one
    assembly gives two records with the same ID. vcf-validator 0.10.2 accepts this, but VCF 4.4 says no identifier
    should be present in more than one data record.
@@ -312,7 +349,7 @@ allele names of point 3 are open.
      single breakend per breakpoint (`From`: `+` → `T.`, `-` → `.T`; `To`: `+` → `.T`, `-` → `T.`), `EVENTTYPE=COMPLEX`,
      declared in each VCF that uses it, as DRAGEN declares its own:
      `##EVENTTYPE=<ID=COMPLEX,Description="Complex chromosomal rearrangement with several breakpoints, ...">`.
-     Without the order or a strand: `<CPX>` records linked by `EVENT`.
+     Without the order or a strand: `<COMPLEX_CHROMOSOMAL_REARRANGEMENT>` records linked by `EVENT`.
    - **Any other type given as two single-base placements on one chromosome** (the `nstd133` inversions and CNVs): one
      record from the first breakpoint to the second; the second placement goes on the side list as
      `merged_breakpoint`.
@@ -325,7 +362,7 @@ allele names of point 3 are open.
 5. **Key names (decided 2026-11-20).** The names are in the key table above and in `etc/vcf_keys.yaml`. The rules
    that produced them (developer, 2026-11-20):
    - **convertGVFtoVCF's names don't matter.** Only one of the two converters will be used.
-   - **Reuse before inventing:** a VCF 4.4 reserved key first (`EVENT`, `EVENTTYPE`, `MATEID`, `VALIDATED`, `AC`,
+   - **Reuse before inventing:** a VCF 4.4 reserved key first (`EVENT`, `EVENTTYPE`, `MATEID`, `AC`,
      `AN`, `SOMATIC`), then a key EVA already writes: the release's `VC` holds the SO accession of the variant class
      (`VC=SO:0000159`), which replaces `TYPESOID`. The release's other keys (`SID`, `RS_VALIDATED`/`SS_VALIDATED`,
      `REMAPPED`, `ALMM`, `ASMM`, `LOE`) describe clustered variants and have no DGVa equivalent.
@@ -343,8 +380,55 @@ allele names of point 3 are open.
    or the width of the outer window either. The XSD defines it only as the status of the placement "Recipient", and
    its meaning isn't documented further, so the key's description stays literal.
 
-   Still open: `VALIDATION_RESULT` (only if the results say more than `VALIDATED`), and whether the experiment ID of a
-   call goes on the variant or in the metadata. The
-   allele names of point 3 are reviewed later in the ticket.
+   **Validation (decided 2026-11-20): `VALIDATION_RESULT` only, not the reserved `VALIDATED` flag.** Oracle's optimizer
+   statistics on `VARIANT_CALL_VALIDATION` (a frequency histogram over all 2,992,979 rows, analysed 2026-03-11; read
+   without scanning the table) give `Pass` 2,523,234, `Fail` 371,029 and `Inconclusive` 98,716: a flag could only say
+   `Pass`. The rows cover 2,138,880 calls, so a call can have several results.
+
+   **Experiments can't be assumed one per analysis** (checked 2026-11-20 on the 761 experiments of `DGVA_EXPERIMENT`,
+   with `DGVA_METHOD`, `DGVA_ANALYSIS`, `DGVA_DETECTION` and `DGVA_PLATFORM`). Several experiments of one study can be
+   the same kind of experiment, so they were compared on their description, not their IDs:
+
+   | Experiment type | Studies with several | All alike: method type + analysis type | + detection | + platform |
+   |---|---|---|---|---|
+   | Validation | 28 of 59 | 3 | 3 | 1 |
+   | Discovery | 73 of 206 | 26 | 24 | 14 |
+   | Genotyping | 2 of 2 | 2 | 1 | 1 |
+
+   So 25 of the validated studies use genuinely different validation methods (for example `nstd37`: aCGH,
+   karyotyping, SNP array, MLPA, FISH and PCR), and 47 studies different discovery methods. The analysis type alone
+   hides this ("Manual observation" covers PCR, FISH and karyotyping); the method type shows it. Each call has exactly
+   one discovery experiment (`VARIANT_CALL_EXPERIMENT` has one row per call: 37,536,419), but can have several
+   validation results (2,992,979 results for 2,138,880 calls). Whether one call was validated by several different
+   methods needs a scan of `VARIANT_CALL_VALIDATION` (outside busy hours); it doesn't change the decision below.
+
+   **Decision (2026-11-20): records reference merged experiment descriptions.**
+   - The experiments of a study are merged when their whole description is identical: experiment type, method type,
+     analysis type, detection method and platform(s). Each merged description gets an ID, assigned in a fixed order
+     (by the lowest submitter experiment ID it covers), and is described once in the metadata, with the submitter
+     experiment IDs it merges.
+   - **Validation:** `VALIDATION_RESULT=<description ID>:<result>`, one value per result (for example
+     `VALIDATION_RESULT=V1:Pass,V2:Fail`).
+   - **Discovery (decided 2026-11-20): one EVA calls analysis per discovery description** (the whole description,
+     platform included), per submitted assembly. The description lives in the analysis metadata, so the VCF needs no
+     discovery key. Genotyping experiments are treated the same way.
+
+   **Calls analyses if there is one per discovery description** (counted 2026-11-20). 586 of the 761 experiments have
+   calls (584 discovery, 2 genotyping; checked with one index probe per experiment, no scan), in 206 studies. Today
+   there is one calls analysis per study and submitted assembly:
+
+   | Merged on | Calls analyses (per study, before assemblies) | Studies split | Largest |
+   |---|---|---|---|
+   | (today) | 206 | 0 | 1 |
+   | method type + analysis type | 267 | 38 | 7 |
+   | + detection method | 316 | 41 | 24 |
+   | **+ platform (the whole description: decided)** | 363 | 51 | 30 (`nstd37`), then 27 (`estd59`), 14 (`estd188`) |
+
+   155 studies keep a single calls analysis. The large splits come from platforms: `nstd37`'s 33 experiments have 2
+   method types, 2 analysis types and 4 detection methods, but 28 platforms (clinical laboratories' arrays). Not
+   counted: the 14 studies submitted on several assemblies, where an analysis per description and assembly could
+   add more (`nstd37`, `nstd102` and `nstd101` are among them); counting it needs a join of the calls with their
+   placements, outside busy hours. The regions analyses don't change: regions have no experiment.
+
 6. **The SO terms in use.** `symbolic_alleles.yaml` is keyed by the Exchange types of the XSD.
    `dgva-extraction check-types` compares it with `SEQUENCE_ONTOLOGY_CV` once the `SELECT`-only account exists.

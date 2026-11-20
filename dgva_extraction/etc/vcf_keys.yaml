@@ -247,24 +247,14 @@
   status: agreed
   sprint: 4
 
-- key: VALIDATED
-  field: INFO
-  number: 0
-  type: Flag
-  description: 'Validated by follow-up experiment'
-  source: 'VARIANT_CALL_VALIDATION.VALIDATION_RESULT, when positive (gap row 91). The validation experiment goes in the metadata'
-  reserved: true
-  status: agreed
-  sprint: 4
-
 - key: VALIDATION_RESULT
   field: INFO
   number: .
   type: String
-  description: 'Result of each validation of the variant'
-  source: 'VARIANT_CALL_VALIDATION.VALIDATION_RESULT (gap row 91). Only if its values say more than VALIDATED'
+  description: 'Result of each validation of the variant, as experiment:result, the experiment being described in the metadata'
+  source: 'VARIANT_CALL_VALIDATION.VALIDATION_RESULT (gap row 91): Pass, Fail or Inconclusive, one per validation. Used instead of the reserved VALIDATED flag, which can only say Pass (16% of the 2,992,979 results are Fail or Inconclusive; decided 2026-11-20). Each value is <experiment description ID>:<result>, the ID of the merged validation experiment description in the metadata (decided 2026-11-20)'
   reserved: false
-  status: proposed
+  status: agreed
   sprint: 4
 
 - key: SUBMITTED_SEQUENCE

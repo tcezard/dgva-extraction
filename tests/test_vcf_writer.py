@@ -197,13 +197,13 @@ def test_imprecise_sequence_is_refused(builder):
     # No VCF 4.4 allele: defined by the file, with no length.
     ('interchromosomal_translocation', '<TRA>', '40', '.'),
     ('translocation', '<TRA>', '40', '.'),
-    ('complex_chromosomal_rearrangement', '<CPX>', '40', '.'),
-    ('complex_substitution', '<CPX>', '40', '.'),
-    ('sequence_alteration', '<SEQALT>', '40', '.'),
+    ('complex_chromosomal_rearrangement', '<COMPLEX_CHROMOSOMAL_REARRANGEMENT>', '40', '.'),
+    ('complex_substitution', '<COMPLEX_SUBSTITUTION>', '40', '.'),
+    ('sequence_alteration', '<SEQUENCE_ALTERATION>', '40', '.'),
     ('delins', '<DELINS>', '40', '.'),
-    ('indel', '<DELINS>', '40', '.'),
-    ('copy_number_neutral_loss_of_heterozygosity', '<CNLOH>', '40', '.'),
-    ('loss_of_heterozygosity', '<LOH>', '40', '.'),
+    ('indel', '<INDEL>', '40', '.'),
+    ('copy_number_neutral_loss_of_heterozygosity', '<COPY_NUMBER_NEUTRAL_LOSS_OF_HETEROZYGOSITY>', '40', '.'),
+    ('loss_of_heterozygosity', '<LOSS_OF_HETEROZYGOSITY>', '40', '.'),
 ])
 def test_symbolic_allele_and_end_per_type(builder, so_term, allele, end, svlen):
     line = builder.build(call('essv1', so_term, '1', 21, 40))
@@ -413,8 +413,8 @@ def test_alleles_the_file_defines_are_declared_and_valid(genome, tmp_path):
     assert [line for line in text.splitlines() if line.startswith('##ALT')] == [
         '##ALT=<ID=DEL,Description="Deletion">',
         '##ALT=<ID=TRA,Description="Translocation; the partner breakpoint is not given">',
-        '##ALT=<ID=CPX,Description="Complex rearrangement of the region">',
-        '##ALT=<ID=SEQALT,Description="Change of the sequence of the region; the kind of change is not given">',
+        '##ALT=<ID=COMPLEX_CHROMOSOMAL_REARRANGEMENT,Description="Complex chromosomal rearrangement of the region">',
+        '##ALT=<ID=SEQUENCE_ALTERATION,Description="Change of the sequence of the region; the kind of change is not given">',
     ]
     errors = vcf_validator_errors(str(tmp_path / 'test.vcf'))
     if errors is None:

@@ -52,12 +52,12 @@ Decided in ticket 10 on 2026-11-20. Each is valid VCF 4.4; the exact type stays 
 | Translocations given as two breakpoints with strand `not reported` or missing | Two `<TRA>` records linked by `EVENT`, `EVENTTYPE=TRA`: breakend notation can't say the orientation is unknown | About 2,150 intrachromosomal translocations: `nstd106` (1,211), `nstd107` (461), `nstd99` (475); a few dozen with one strand missing | The strands; none is known |
 | Inversions and CNVs given as two single-base breakpoints on one chromosome | One record from the first breakpoint to the second; the second placement is on the side list (`merged_breakpoint`) | 140 variants in `nstd133` | Nothing, if the breakpoints are the variant's ends, as assumed |
 | Complex chromosomal rearrangements given as one placement per breakpoint | One single breakend per breakpoint (`T.` or `.T` from `From`/`To` and the strand), linked by `EVENT`, `EVENTTYPE=COMPLEX` (declared in a `##EVENTTYPE` line). Which breakpoints are joined is not given. | 245 variants in `nstd133`, 2 to 114 breakpoints each | The pairing of the breakpoints; none is known |
-| `complex chromosomal rearrangement`, `complex substitution`, `complex structural alteration` | `<CPX>`, defined in the file | `estd236`: 7 regions; others not counted | Nothing, unless a sequence is submitted (then written from it) |
-| `sequence alteration` | `<SEQALT>`, defined in the file | `estd1`: 25,193 calls | Nothing, unless a sequence is submitted |
-| `indel`, `delins` without a sequence | `<DELINS>`, defined in the file | not counted | The sequence, where DGVa has one (sprint 4) |
-| `copy-neutral loss of heterozygosity`, `loss of heterozygosity` | `<CNLOH>`, `<LOH>`, defined in the file | not counted | Nothing |
+| `complex chromosomal rearrangement`, `complex substitution`, `complex structural alteration` | `<COMPLEX_CHROMOSOMAL_REARRANGEMENT>`, `<COMPLEX_SUBSTITUTION>`, `<COMPLEX_STRUCTURAL_ALTERATION>`, defined in the file | `estd236`: 7 regions; others not counted | Nothing, unless a sequence is submitted (then written from it) |
+| `sequence alteration` | `<SEQUENCE_ALTERATION>`, defined in the file | `estd1`: 25,193 calls | Nothing, unless a sequence is submitted |
+| `indel`, `delins` without a sequence | `<INDEL>`, `<DELINS>`, defined in the file | not counted | The sequence, where DGVa has one (sprint 4) |
+| `copy-neutral loss of heterozygosity`, `loss of heterozygosity` | `<COPY_NUMBER_NEUTRAL_LOSS_OF_HETEROZYGOSITY>`, `<LOSS_OF_HETEROZYGOSITY>`, defined in the file | not counted | Nothing |
 
-The names of the alleles the files define are reviewed later in ticket 10.
+Their names follow the SO term (ticket 10, decided 2026-11-20).
 
 ## 1c. Written wrong: valid VCF that misstates the variant
 
@@ -95,7 +95,7 @@ approximations are in section 1b. Not yet run on the database: see section 5.
 
 The gap table of `reference/dgva-oracle-schema.md`, in the planning repository:
 - HGVS names, placement rank and placements per assembly;
-- sequences, samplesets and validation;
+- sequences and samplesets (validation: section 4b2);
 - repeat counts and motifs, cytobands and mutation order;
 - alt status and submitted types;
 - `estd214`/`estd219` copy numbers and allele frequencies, from the load tables.
@@ -110,6 +110,22 @@ Reading `VARIANT_CALL_SAMPLE`, `VARIANT_CALL_ZYGOSITY` and `VARIANT_CALL_COPY_NU
 - a call with several samples written in each of their files.
 
 See `docs/vcf-representation.md`. `genotype.py` and `etc/ploidy.yaml` exist, but nothing calls them yet.
+
+eva-sub-cli (2026-11-20) requires a sample on every analysis: the regions analysis, and the calls of a study with no
+samples or samplesets, must list samples without a VCF column. A study with no sample at all needs a study-level
+pseudo-sample in the metadata (open, ticket 14). Pseudo-samples need `collection date` and `geographic location`
+(`not provided` is accepted).
+
+### 4b2. Experiments, decided on 2026-11-20 and planned for sprint 4
+
+Not read today, so every call of a study and assembly goes to one calls analysis. Decided (ticket 10, point 5):
+- experiments with an identical description (type, method type, analysis type, detection method, platforms) are
+  merged; each merged description has an ID and is described once in the metadata;
+- one calls analysis per discovery (or genotyping) description and submitted assembly: 363 instead of 206 before
+  the multi-assembly studies; 51 studies split, the largest `nstd37` (30);
+- `VALIDATION_RESULT=<description ID>:<result>` for the 2,992,979 validation results.
+
+Needs `VARIANT_CALL_EXPERIMENT` (one experiment per call), `VARIANT_CALL_VALIDATION`, and the experiment tables.
 
 ### 4c. Fields the GVF already carries, which no ticket covers
 
@@ -156,4 +172,4 @@ the metadata work (plan step 4).
 | Sprint 3 decision 3: the 32,192 variants only in `VARIANT_STUDY_NEW` | Open; recommended: leave out | Not read, so nothing to change if the recommendation holds |
 | Sprint 3 decision 4: the 2 live `estd214` chrY regions (`esv3818028`, `esv3817941`) | Open; recommended: treat as withdrawn | **Not implemented: the reader writes them today.** Needs an exclusion list if the recommendation is taken. |
 | Ticket 10 points 1–3: VCF 4.4; `SVCLAIM` defaults to `D`; types with no VCF allele get one the file defines | Decided 2026-11-20 | Implemented; see section 1b |
-| Ticket 10 points 4–5: variants with several placements (best placement keeps the accession, `EVENT` links the records, breakends for breakpoints); key names | Decided 2026-11-20 | Implemented, unit-tested; not yet run on the database (section 5). Allele names: open. |
+| Ticket 10 points 4–5: variants with several placements (best placement keeps the accession, `EVENT` links the records, breakends for breakpoints); key names | Decided 2026-11-20 | Implemented, unit-tested; not yet run on the database (section 5). Allele names decided the same day. |
