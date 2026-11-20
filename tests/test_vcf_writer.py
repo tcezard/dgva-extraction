@@ -6,10 +6,13 @@ allele, symbolic alleles from SO terms, and FORMAT ordering with GT first.
 """
 import filecmp
 import random
+from importlib import resources
 
 import pytest
+import yaml
 
 from conftest import CHR1, vcf_validator_errors
+from dgva_extraction.keys import SymbolicAlleles
 from dgva_extraction.record import ConfidenceInterval, VariantRecord
 from dgva_extraction.vcf_writer import (OrderError, RecordError, StudyFailedError, StudyVcfWriter, VcfLineBuilder,
                                         normalise_reference)
@@ -191,22 +194,45 @@ def test_imprecise_sequence_is_refused(builder):
     ('mobile-element insertion', '<INS:ME>', '20', '.'),
     ('line1_insertion', '<INS:ME:LINE1>', '20', '.'),
     ('novel_sequence_insertion', '<INS>', '20', '.'),
+    # No VCF 4.4 allele: defined by the file, with no length.
+    ('interchromosomal_translocation', '<TRA>', '40', '.'),
+    ('complex_chromosomal_rearrangement', '<CPX>', '40', '.'),
+    ('complex_substitution', '<CPX>', '40', '.'),
+    ('sequence_alteration', '<SEQALT>', '40', '.'),
+    ('delins', '<DELINS>', '40', '.'),
+    ('indel', '<DELINS>', '40', '.'),
+    ('copy_number_neutral_loss_of_heterozygosity', '<CNLOH>', '40', '.'),
+    ('loss_of_heterozygosity', '<LOH>', '40', '.'),
 ])
 def test_symbolic_allele_and_end_per_type(builder, so_term, allele, end, svlen):
-    record = call('essv1', so_term, '1', 21, 40, info={'SVCLAIM': ['DJ']} if allele.startswith(('<DEL', '<DUP'))
-                  and so_term not in ('copy number loss', 'copy_number_gain') else {})
-    line = builder.build(record)
+    line = builder.build(call('essv1', so_term, '1', 21, 40))
     info = dict(line.info)
     assert line.alt == allele
     assert info['END'] == end
     assert info['SVLEN'] == svlen
 
 
-@pytest.mark.parametrize('so_term', ['sequence_alteration', 'complex_substitution', 'interchromosomal_translocation'])
-def test_type_with_no_symbolic_allele_is_refused(builder, so_term):
+def test_every_type_in_the_allele_table_has_an_allele():
+    table = yaml.safe_load(resources.files('dgva_extraction').joinpath('etc', 'symbolic_alleles.yaml').read_text())
+    assert [term for term, entry in table.items() if not entry.get('allele')] == []
+
+
+def test_type_with_no_symbolic_allele_is_refused(genome):
+    alleles = SymbolicAlleles.load('undecided_type: {allele: null, end_is_pos: false, description: Not decided}')
     with pytest.raises(RecordError) as error:
-        builder.build(call('essv1', so_term, '1', 21, 40))
+        VcfLineBuilder(genome, alleles=alleles).build(call('essv1', 'undecided_type', '1', 21, 40))
     assert error.value.reason == 'no_symbolic_allele'
+
+
+@pytest.mark.parametrize('allele', ['LOH:CN', 'TWO WORDS', 'A,B', '<CPX>'])
+def test_allele_the_file_defines_must_be_a_valid_id(allele):
+    with pytest.raises(ValueError):
+        SymbolicAlleles.load(f'some_type: {{allele: "{allele}", end_is_pos: false, description: x}}')
+
+
+def test_type_with_a_sequence_is_written_from_it_whatever_its_allele(builder):
+    line = builder.build(call('essv1', 'delins', '1', 21, 22, sequence='TTT'))
+    assert not line.alt.startswith('<')
 
 
 def test_type_not_in_the_allele_table_is_refused(builder):
@@ -215,10 +241,13 @@ def test_type_not_in_the_allele_table_is_refused(builder):
     assert error.value.reason == 'unknown_type'
 
 
-def test_deletion_without_svclaim_is_refused(builder):
-    with pytest.raises(RecordError) as error:
-        builder.build(call('essv1', 'deletion', '1', 21, 40))
-    assert error.value.reason == 'missing_svclaim'
+@pytest.mark.parametrize('so_term', ['deletion', 'duplication', 'tandem_duplication', 'alu_deletion'])
+def test_deletion_or_duplication_without_svclaim_claims_abundance(builder, so_term):
+    assert dict(builder.build(call('essv1', so_term, '1', 21, 40)).info)['SVCLAIM'] == 'D'
+
+
+def test_submitted_svclaim_is_kept(builder):
+    assert dict(builder.build(call('essv1', 'deletion', '1', 21, 40, info={'SVCLAIM': ['J']})).info)['SVCLAIM'] == 'J'
 
 
 def test_copy_number_change_implies_an_abundance_claim(builder):
@@ -373,6 +402,25 @@ def test_vcf_from_records_is_valid(genome, tmp_path):
     assert errors == []
 
 
+def test_alleles_the_file_defines_are_declared_and_valid(genome, tmp_path):
+    records = [region('esv1', 'complex_chromosomal_rearrangement', '1', 21, 60),
+               call('essv2', 'interchromosomal_translocation', '1', 30, 30, parents=('esv1',)),
+               call('essv3', 'sequence_alteration', '1', 41, 50, parents=('esv1',)),
+               call('essv4', 'deletion', '1', 52, 58)]
+    write_vcf(genome, tmp_path / 'test.vcf', records, samples=())
+    text = (tmp_path / 'test.vcf').read_text()
+    assert [line for line in text.splitlines() if line.startswith('##ALT')] == [
+        '##ALT=<ID=DEL,Description="Deletion">',
+        '##ALT=<ID=TRA,Description="Translocation; the partner breakpoint is not given">',
+        '##ALT=<ID=CPX,Description="Complex rearrangement of the region">',
+        '##ALT=<ID=SEQALT,Description="Change of the sequence of the region; the kind of change is not given">',
+    ]
+    errors = vcf_validator_errors(str(tmp_path / 'test.vcf'))
+    if errors is None:
+        pytest.skip('vcf_validator is not installed')
+    assert errors == []
+
+
 def test_contigs_are_in_assembly_report_order_and_ids_are_accessions(genome, tmp_path):
     write_vcf(genome, tmp_path / 'test.vcf', sample_records())
     lines = data_lines(tmp_path / 'test.vcf')
@@ -431,14 +479,14 @@ def test_contig_that_comes_back_later_is_still_sorted(genome, tmp_path):
 
 
 def test_refused_record_fails_the_study_and_writes_nothing(genome, tmp_path):
-    records = sample_records() + [call('essv99', 'sequence_alteration', '2', 300, 310),
-                                  call('essv98', 'deletion', '2', 300, 310)]
+    records = sample_records() + [call('essv99', 'made_up_type', '2', 300, 310),
+                                  call('essv98', 'short_tandem_repeat_variation', '2', 300, 310)]
     with pytest.raises(StudyFailedError) as error:
         write_vcf(genome, tmp_path / 'test.vcf', records)
     assert not (tmp_path / 'test.vcf').exists()
     assert not any(path.name.startswith('.dgva_extraction_') for path in tmp_path.iterdir())
     statistics = error.value.statistics
-    assert statistics.refused == {'no_symbolic_allele': 1, 'missing_svclaim': 1}
+    assert statistics.refused == {'unknown_type': 1, 'missing_repeat_unit': 1}
     assert statistics.written == 10
 
 

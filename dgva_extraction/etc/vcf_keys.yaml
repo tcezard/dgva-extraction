@@ -71,9 +71,9 @@
   number: A
   type: String
   description: Claim made by the structural variant call. Valid values are D, J, DJ for abundance, adjacency and both respectively
-  source: Implied by the type for copy number gain and loss (D); otherwise to be derived (ticket 10, open)
+  source: D (abundance) by default, which copy number gain and loss also imply (ticket 10, decided 2026-11-20); deriving it from the study's detection method is a later ticket
   reserved: true
-  status: proposed
+  status: agreed
   sprint: 3
 
 - key: TYPESOID

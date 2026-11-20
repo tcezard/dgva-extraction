@@ -21,7 +21,7 @@ The proposals were checked with vcf-validator 0.10.2 on VCFs written by the writ
 | `SVLEN` | INFO | A | Integer | yes | stop − start + 1; `.` for insertions | agreed |
 | `IMPRECISE` | INFO | 0 | Flag | yes | any CI bound not 0 | agreed |
 | `CIPOS`, `CIEND` | INFO | 2 | Integer | yes | `CIPOS*`/`CIEND*`, else `CI_START`/`CI_STOP`, else inner/outer | agreed |
-| `SVCLAIM` | INFO | A | String | yes | type (copy number gain/loss: `D`); otherwise **open**, see below | proposed |
+| `SVCLAIM` | INFO | A | String | yes | `D` by default, which copy number gain/loss also imply (decision 2 below) | agreed |
 | `TYPESOID` | INFO | 1 | String | no | SO ID of the type (name from the legacy VCF exporter) | proposed |
 | `SUBMITTED_TYPE` | INFO | 1 | String | no | submitter type, where it differs beyond case and separators | proposed (sprint 4) |
 | `PARENT` | INFO | . | String | no | `LINKED_VARIANT`: call → region and region → region | proposed |
@@ -50,7 +50,7 @@ header.
    A call points at its region(s) with `PARENT`, and so does a region nested in another region (`estd1`, `estd20`,
    `estd59`). A call with no region (W1: `estd236`, `estd237`) has no `PARENT`. A withdrawn parent is left out of
    `PARENT`. See "File layout" below.
-3. **A value with no target fails the study.** The writer refuses a record whose type has no symbolic allele, or that
+3. **A value with no target fails the study.** The writer refuses a record whose type isn't in the allele table, or that
    carries a value with no key in the table, or a value that doesn't match its key's `Number` and `Type`. A study with
    a refused record produces no VCF; its statistics list every refusal with its reason.
 4. **Genotypes come from the zygosity and the species' ploidy** (agreed 2026-11-19; `dgva_extraction/genotype.py`,
@@ -169,48 +169,53 @@ Still open with this layout:
 | `SUBMITTED_TYPE` (rows 86, 108) | Only where it differs from the Exchange type beyond case and `_`/`-` |
 | Placement method | Per line for non-default methods; header line for the null-method studies (rule 5) |
 
-## Decisions still open
+## Decisions on the representation
 
 [`edge-cases.md`](edge-cases.md) lists every case the extraction does not yet handle, including those that
 depend on the decisions below.
 
-These came out of checking the writer's output with vcf-validator, or have no answer in the gap table. Each one
-currently makes the writer refuse the record, so a study it affects fails until it is decided.
+These came out of checking the writer's output with vcf-validator, or have no answer in the gap table. Points 1–3 were
+decided on 2026-11-20 and are implemented. Points 4–6 are open.
 
-1. **VCF version: 4.4 (proposed).** 4.4 reserves the SV keys the gap table uses (`RUC`, `RUS`, `SVCLAIM`, `CNV:TR`). It
-   also brings rules that vcf-validator enforces:
-   - `SVLEN` on every symbolic allele, including `<INS>`, where it is written `.`;
-   - `SVCLAIM` on every `<DEL>` and `<DUP>`;
+1. **VCF version: 4.4 (decided).** 4.4 reserves the SV keys the gap table uses (`RUC`, `RUS`, `SVCLAIM`, `CNV:TR`).
+   Its rules, which vcf-validator enforces and the writer follows:
+   - `SVLEN` on every symbolic allele: `.` for `<INS>` and for the alleles the file defines (point 3);
+   - `SVCLAIM` on every `<DEL>` and `<DUP>` (point 2);
    - `RUS` or `RUL` on every `<CNV:TR>`;
    - the repeat keys only on `<CNV:TR>`.
+2. **`SVCLAIM` for `<DEL>`/`<DUP>`: abundance (`D`) by default (decided).** The technologies behind most DGVa calls
+   (arrays, read depth) measure abundance and rarely resolve an adjacency (`J`). A copy number gain or loss is an
+   abundance claim by definition; `deletion`, `duplication`, `tandem duplication` and the mobile element deletions get
+   the default. A submitted `SVCLAIM` would be kept.
 
-   Writing 4.3 would avoid the `SVCLAIM` question but lose the reserved repeat keys.
-2. **`SVCLAIM` for `<DEL>`/`<DUP>`.** A copy number gain or loss is by definition an abundance claim (`D`). For
-   `deletion`, `duplication`, `tandem duplication` and the mobile element deletions, the type doesn't say.
-   - Proposal: derive it from the analysis type of the call's experiment (`VARIANT_CALL_EXPERIMENT` →
-     `EXPERIMENT_ANALYSIS` → `DGVA_ANALYSIS.ANALYSIS_TYPE`).
-     - `Probe signal intensity`, `Read depth`, `SNP genotyping analysis` and `MCD analysis` give `D`.
-     - `Paired-end mapping`, `Split read mapping`, `Split read and paired-end mapping`, `Sequence alignment` and the
-       assembly-based analyses give `J`.
-     - `Read depth and paired-end mapping` gives `DJ`.
-     - `Curated`, `Merging`, `Multiple`, `Not provided` and `Other` remain open, as do regions, which have no
-       experiment of their own. Their claim could come from their calls.
-   - Until this is decided, a `deletion` or `duplication` record is refused (`missing_svclaim`).
-3. **Types with no VCF symbolic allele.**
-   - `sequence alteration`: `estd1` alone has 25,193 calls.
-   - `complex substitution`, `complex chromosomal rearrangement` (7 `estd236` regions), `indel`/`delins` without a
-     sequence, `copy-neutral loss of heterozygosity`.
-   - The translocations, which need breakend (`BND`) notation with the mate's position and orientation. That includes
-     the `nstd83` translocation regions, which the reader positions from their supporting calls.
+   A later ticket can refine it from the study metadata, if the gain is worth the cost. For example, from the analysis
+   type of the call's experiment (`VARIANT_CALL_EXPERIMENT` → `EXPERIMENT_ANALYSIS` → `DGVA_ANALYSIS.ANALYSIS_TYPE`):
+   - `Paired-end mapping`, `Split read mapping`, `Split read and paired-end mapping`, `Sequence alignment` and the
+     assembly-based analyses would give `J`;
+   - `Read depth and paired-end mapping` would give `DJ`;
+   - the others keep `D`. Regions have no experiment of their own; their claim could come from their calls.
+3. **Types with no VCF 4.4 symbolic allele: a symbolic allele the file defines (decided).** A record with a sequence
+   is written from it, and a type that fits a VCF 4.4 allele uses that allele. Otherwise the type gets an allele defined
+   in the `##ALT` header of each VCF that uses it, as VCF 4.4 allows. These can't have colon-separated subtypes (only
+   `DEL`, `INS`, `DUP`, `INV` and `CNV` can), and are written with `SVLEN=.`. The exact type stays in `TYPESOID`.
 
-   They are refused (`no_symbolic_allele`). Options: a non-standard symbolic allele declared in the header, `<CNV>` with
-   the type in `TYPESOID`, or leaving them out of the VCF and listing them in the DGVa JSON.
+   | Types | Allele |
+   |---|---|
+   | inter- and intrachromosomal translocation | `<TRA>` |
+   | complex structural alteration, complex chromosomal rearrangement, complex substitution | `<CPX>` |
+   | sequence alteration (`estd1`: 25,193 calls) | `<SEQALT>` |
+   | `indel`, `delins` without a sequence | `<DELINS>` |
+   | copy-neutral loss of heterozygosity; loss of heterozygosity | `<CNLOH>`; `<LOH>` |
+
+   A translocation could be written exactly with breakend (`BND`) notation where DGVa has the mate's position and
+   orientation (`VARIANT_MATE`, not read yet). That is a later ticket; `<TRA>` stays for the translocations without a
+   mate, such as the `nstd83` regions that the reader positions from their supporting calls.
 4. **Duplicate IDs.** A variant with two submitted placements on one assembly (72,857 `Submitted genomic` placements
    with rank `NotBest`) gives two records with the same ID. vcf-validator 0.10.2 accepts this, but VCF 4.4 says no
    identifier should be present in more than one data record. Options: accept it (one record per placement, as
    proposed), or write only the `BestAvailable` placement and list the others in the DGVa JSON.
-5. **Are the new key names right?** `TYPESOID`, `ASSERTM`, `PLACEMETHOD`, `PARENT`, `SAMPLESET`, `VALIDMETH` and
+5. **Are the new key and allele names right?** `TYPESOID`, `ASSERTM`, `PLACEMETHOD`, `PARENT`, `SAMPLESET`, `VALIDMETH` and
    `VALIDRES` reuse the legacy DGVa VCF exporter's names where it had one. The rest (`HGVS`, `PLACRANK`, `PLACEMENTS`,
-   `CYTOBAND`, `MUTORDER`, `SUBMITTED_TYPE`, `ALTSTATUS`, `SVSEQ`) are new.
+   `CYTOBAND`, `MUTORDER`, `SUBMITTED_TYPE`, `ALTSTATUS`, `SVSEQ`) are new, as are the alleles of point 3.
 6. **The SO terms in use.** `symbolic_alleles.yaml` is keyed by the Exchange types of the XSD.
    `dgva-extraction check-types` compares it with `SEQUENCE_ONTOLOGY_CV` once the `SELECT`-only account exists.

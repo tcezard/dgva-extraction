@@ -14,6 +14,10 @@ VALID_TYPES = {'Integer', 'Float', 'Flag', 'Character', 'String'}
 # delimiter in FORMAT values only.
 _PERCENT_ENCODED = {'%': '%25', ':': '%3A', ';': '%3B', '=': '%3D', ',': '%2C', '\r': '%0D', '\n': '%0A',
                     '\t': '%09'}
+# The symbolic SV allele types VCF 4.4 defines (section 5.3). Only these may have colon-separated subtypes, and only
+# these have a length: other symbolic alleles are defined by the file that uses them, with SVLEN=.
+RESERVED_SV_TYPES = ('DEL', 'INS', 'DUP', 'INV', 'CNV')
+_ALLELE_ID = re.compile(r'[^\s,<>]+')
 _PERCENT_PATTERNS = {
     'INFO': re.compile('[' + re.escape(''.join(c for c in _PERCENT_ENCODED if c != ':')) + ']'),
     'FORMAT': re.compile('[' + re.escape(''.join(_PERCENT_ENCODED)) + ']'),
@@ -131,6 +135,20 @@ class SymbolicAllele:
     description: str
     order: int
     svclaim: Optional[str] = None
+
+    def __post_init__(self):
+        if self.allele is None:
+            return
+        if not _ALLELE_ID.fullmatch(self.allele):
+            raise ValueError(f'Symbolic allele {self.allele!r} ({self.so_term}): no spaces, commas or angle brackets')
+        if ':' in self.allele and not self.is_reserved:
+            raise ValueError(f'Symbolic allele {self.allele!r} ({self.so_term}): only the VCF types '
+                             f'{", ".join(RESERVED_SV_TYPES)} can have subtypes')
+
+    @property
+    def is_reserved(self):
+        """True for the SV alleles VCF 4.4 defines (subtypes included); False for ones defined by the file."""
+        return bool(self.allele) and self.allele.split(':')[0] in RESERVED_SV_TYPES
 
     @property
     def needs_svclaim(self):

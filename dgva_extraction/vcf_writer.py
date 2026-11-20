@@ -4,8 +4,10 @@ Rules (proposed in ticket 10, see docs/vcf-representation.md):
 
 - one VCF record per DGVa accession and placement, with the accession in the ID column; records at the same position
   are never merged;
-- a record whose type has no symbolic allele, or that carries a value with no key in the key table, is refused, and a
-  study with a refused record fails: no VCF is produced, and the statistics list every refusal with its reason;
+- a record with no sequence is written with its type's symbolic allele: a VCF 4.4 one where it fits, otherwise one
+  that the file defines in its header (ticket 10, decided 2026-11-20);
+- a record whose type has no allele, or that carries a value with no key in the key table, is refused, and a study
+  with a refused record fails: no VCF is produced, and the statistics list every refusal with its reason;
 - lines are sorted by contig in assembly-report order, then by position and accession; header lines and INFO keys
   are in a fixed order. The same records give the same bytes.
 
@@ -26,6 +28,10 @@ from dgva_extraction.reference import Contig, Genome, ReferenceLookupError
 
 
 VCF_VERSION = 'VCFv4.4'
+# VCF 4.4 requires SVCLAIM on <DEL> and <DUP>. DGVa doesn't record it, and the technologies behind most of its calls
+# (arrays, read depth) measure abundance rather than resolve adjacencies, so abundance (D) is the default (ticket 10,
+# decided 2026-11-20). Deriving it from the study metadata (detection method) is a separate, later ticket.
+DEFAULT_SVCLAIM = 'D'
 DEFAULT_PLACEMENT_METHOD = 'Submitted genomic'
 VALID_BASES = set('ACGTN')
 # IUPAC ambiguity codes in the reference are replaced by the first base, in alphabetical order, that they stand for
@@ -142,12 +148,14 @@ class VcfLineBuilder:
             alt = f'<{symbolic}>'
             if allele_entry.end_is_pos:
                 info['END'] = pos
-                # VCF 4.4 requires SVLEN on symbolic alleles; the length of an insertion is unknown without its
-                # sequence.
-                info['SVLEN'] = [None]
             else:
                 info['END'] = record.end
+            if allele_entry.is_reserved and not allele_entry.end_is_pos:
                 info['SVLEN'] = [record.end - record.start + 1]
+            else:
+                # VCF 4.4 requires SVLEN on symbolic alleles. It is missing for an insertion, whose length is unknown
+                # without its sequence, and for an allele the file defines, which has no length in VCF terms.
+                info['SVLEN'] = [None]
             imprecise = False
             if ci_pos is not None:
                 info['CIPOS'] = ci_pos.vcf_values()
@@ -158,11 +166,7 @@ class VcfLineBuilder:
             if imprecise:
                 info['IMPRECISE'] = True
             if allele_entry.needs_svclaim and 'SVCLAIM' not in record.info:
-                if not allele_entry.svclaim:
-                    raise RecordError('missing_svclaim',
-                                      f'{record.accession}: <{symbolic}> needs SVCLAIM, and type {record.so_term!r} '
-                                      f'does not imply one')
-                info['SVCLAIM'] = [allele_entry.svclaim]
+                info['SVCLAIM'] = [allele_entry.svclaim or DEFAULT_SVCLAIM]
             is_tandem_repeat = symbolic == TANDEM_REPEAT_ALLELE
             if is_tandem_repeat and not any(key in record.info for key in ('RUS', 'RUL')):
                 raise RecordError('missing_repeat_unit',

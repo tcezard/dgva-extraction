@@ -25,7 +25,7 @@ def reasons_in_code():
 def test_code_reasons_are_found():
     # Guard against the patterns above silently matching nothing.
     reasons = reasons_in_code()
-    assert {'no_symbolic_allele', 'missing_svclaim', 'no_start', 'duplicate_placement', 'withdrawn'} <= reasons
+    assert {'no_symbolic_allele', 'unknown_type', 'no_start', 'duplicate_placement', 'withdrawn'} <= reasons
 
 
 def test_every_reason_is_in_the_edge_case_list():

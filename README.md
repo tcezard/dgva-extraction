@@ -17,8 +17,8 @@ imported from it.
   - the W items and the confidence-interval sources are handled as in the reference document.
 - **Writes** one VCF record per DGVa accession and placement, with the accession in the ID column. The output is
   deterministic: the same records give the same bytes.
-- **Fails the study** rather than dropping data: a type with no SO term or no symbolic allele, a value with no VCF
-  key, or rows that disagree all stop the study.
+- **Fails the study** rather than dropping data: a type with no SO term or not in the allele table, a value with no
+  VCF key, or rows that disagree all stop the study. Types with no VCF 4.4 allele get one defined in the file's header.
 - **Lists** what is in no VCF (withdrawn, unplaced, remapped-only and no-position variants; placements with no start or
   chromosome; duplicate placements) in a side list per study.
 

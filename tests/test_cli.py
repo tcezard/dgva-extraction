@@ -99,13 +99,13 @@ def test_extract_is_deterministic(run_extract, tmp_path):
 
 
 def test_extract_fails_the_study_on_a_refused_record(run_extract, tmp_path):
-    rows = sample_study_rows() + [placement_row(8, 'essv8', '2', 200, 210, so_term='sequence_alteration',
-                                                so_id='SO:0001059', placement_method=None)]
+    rows = sample_study_rows() + [placement_row(8, 'essv8', '2', 200, 210, so_term='made_up_type',
+                                                so_id='SO:0000000', placement_method=None)]
     status, _ = run_extract(rows, tmp_path / 'out')
     assert status == 1
     # Neither file is written, although only a call was refused.
     assert sorted(path.name for path in (tmp_path / 'out').iterdir()) == ['estd1_GCA_TEST.1.side_list.tsv',
                                                                           'estd1_GCA_TEST.1.stats.tsv']
     stats = (tmp_path / 'out' / 'estd1_GCA_TEST.1.stats.tsv').read_text()
-    assert 'calls\trefused\tno_symbolic_allele\t1' in stats
+    assert 'calls\trefused\tunknown_type\t1' in stats
     assert 'essv8' in stats

@@ -8,10 +8,11 @@ and what it needs.
 - Remove an entry when the code handles the case and a test covers it, and say so in the commit.
 - `tests/test_edge_cases_list.py` fails if a refusal or side-list reason in the code is missing from this file.
 
-Last updated: 2026-11-20, after the first trial run on `estd240`, `estd236` and `nstd83`.
+Last updated: 2026-11-20, after ticket 10's decisions on VCF 4.4, `SVCLAIM` and the alleles the files define.
 
 How the code treats a case today:
 - **Refused:** the writer refuses the record, and the whole study fails with no VCF. The statistics list each refusal.
+- **Approximated:** the record is written, but with a default or a less precise allele than DGVa could support.
 - **Study fails:** the reader stops the study. None of these has been seen in the data; they are guards.
 - **Side list:** the record is not written, and is listed in the study's side list (`*.side_list.tsv`). Sprint 4 turns
   the side list into the DGVa JSON.
@@ -22,13 +23,8 @@ How the code treats a case today:
 
 | Reason code | Case | Where it occurs | What it needs |
 |---|---|---|---|
-| `no_symbolic_allele` | Translocations, inter- and intrachromosomal | `estd236` (74 of its 89 rows), `nstd83` (20 call placements and 10 regions), and other studies | Breakend (`BND`) notation, with the mate's position and orientation. Ticket 10, open point 3. |
-| `no_symbolic_allele` | `sequence alteration` | `estd1`: 25,193 calls | A representation (ticket 10, open point 3) |
-| `no_symbolic_allele` | `complex chromosomal rearrangement`, `complex substitution`, `complex structural alteration` | `estd236`: 7 regions; others not counted | A representation (ticket 10, open point 3) |
-| `no_symbolic_allele` | `indel`, `delins` without a sequence | not counted | A representation, or the sequence (sprint 4) |
-| `no_symbolic_allele` | `copy-neutral loss of heterozygosity` | not counted | A representation (ticket 10, open point 3) |
+| `no_symbolic_allele` | A type whose allele is `null` in `etc/symbolic_alleles.yaml` | None since 2026-11-20: every type in the table has an allele | A guard, for a type added without a decision |
 | `unknown_type` | A type not in `etc/symbolic_alleles.yaml` | `complex chromosomal rearrangement` was missing until 2026-11-20 | Run `dgva-extraction check-types` over the whole database, and add every type in use |
-| `missing_svclaim` | `<DEL>`/`<DUP>` from `deletion`, `duplication`, `tandem duplication` or the mobile element deletions, which don't say whether the claim is abundance or adjacency | `nstd83`: 15 deletions; most studies | A source for `SVCLAIM`. Proposed: the analysis type of the call's experiment. Regions have no experiment. Ticket 10, open point 2. |
 | `missing_repeat_unit` | `<CNV:TR>` (short tandem repeat) with no `RUS` or `RUL` | Any tandem repeat until the repeat fields are read (sprint 4). `nstd128` has motifs on its regions only. | Read the motifs (sprint 4). Then decide what to do with calls that have a count but no motif. |
 | `repeat_key_without_tandem_repeat` | A repeat count on a record that isn't `<CNV:TR>` | `nstd128` calls (4.4 M) if their type isn't a tandem repeat: type not checked | Check `nstd128`'s types when the repeat fields are read (sprint 4) |
 | `sequence_not_allele` | A submitted sequence with characters other than A, C, G, T, N | Sequences aren't read yet (sprint 4) | Write it in `SVSEQ` instead (proposed) |
@@ -40,6 +36,21 @@ How the code treats a case today:
 | `invalid_confidence_interval` | A confidence interval that does not contain 0 | Not seen yet | Look at the case |
 | `invalid_reference_base` | A FASTA character that isn't a base or an IUPAC code | Not seen yet | Look at the FASTA |
 | `unmapped_value`, `duplicate_key` | A value with no key in `etc/vcf_keys.yaml`, or a key the writer sets itself | Only when new fields are added | Add the key (ticket 10 review) |
+
+## 1b. Approximated: written, with less than DGVa could give
+
+Decided in ticket 10 on 2026-11-20. Each is valid VCF 4.4; the exact type stays in `TYPESOID`.
+
+| Case | Written as | Where it occurs | What would make it exact |
+|---|---|---|---|
+| `SVCLAIM` on `<DEL>`/`<DUP>` from `deletion`, `duplication`, `tandem duplication` or the mobile element deletions, which don't say whether the call claims abundance or adjacency | `SVCLAIM=D` (abundance), the default: most DGVa technologies (arrays, read depth) measure abundance | `nstd83`: 15 deletions; most studies | Derive it from the study metadata, for example the detection method (sequencing calls may be `J` or `DJ`). A later ticket, if the gain is worth the cost. |
+| Translocations, inter- and intrachromosomal | `<TRA>`, defined in the file, with `SVLEN=.` | `estd236` (74 of its 89 rows), `nstd83` (20 call placements and 10 regions), and other studies | Breakend (`BND`) notation where DGVa has the mate's position and orientation (`VARIANT_MATE`, not read: section 4c). A later ticket. |
+| `complex chromosomal rearrangement`, `complex substitution`, `complex structural alteration` | `<CPX>`, defined in the file | `estd236`: 7 regions; others not counted | Nothing, unless a sequence is submitted (then written from it) |
+| `sequence alteration` | `<SEQALT>`, defined in the file | `estd1`: 25,193 calls | Nothing, unless a sequence is submitted |
+| `indel`, `delins` without a sequence | `<DELINS>`, defined in the file | not counted | The sequence, where DGVa has one (sprint 4) |
+| `copy-neutral loss of heterozygosity`, `loss of heterozygosity` | `<CNLOH>`, `<LOH>`, defined in the file | not counted | Nothing |
+
+The names of the alleles the files define are part of ticket 10's open point 5 (key names), for review.
 
 ## 2. Study fails in the reader (guards; none seen in the data)
 
@@ -60,7 +71,7 @@ How the code treats a case today:
 | `no_chromosome` | W3: a start but no chromosome or contig name | `estd240`: both variants | Find the chromosome, for example in the Exchange XML. Until then the study has an empty VCF. |
 | `no_end` | No stop, outer stop or inner stop, on a type that isn't an insertion | not counted | Look at the cases |
 | `duplicate_placement` | Identical placements of one accession, written once | `estd208`: 169 variants × 5 placements | Find which assembly they are on (ticket 13, not done) |
-| `positioned_from_calls` | A translocation region with no placement of its own, positioned from its first supporting call. It is listed so that the derived position is visible. | `nstd83`: 10 regions | Still refused (section 1); `BND` will need both calls' positions |
+| `positioned_from_calls` | A translocation region with no placement of its own, positioned from its first supporting call. It is listed so that the derived position is visible. | `nstd83`: 10 regions | Written as `<TRA>` (section 1b); `BND` will need both calls' positions |
 | (study side list) `withdrawn`, `remapped_only`, `no_position_only`, `no_placement` | Variants in no VCF | 101,575 withdrawn; 976 remapped-only (`nstd35`); 751 with no position only; 112 with no placement (`estd180`, `nstd83`) | Nothing: the DGVa JSON lists them (sprint 4). The remapped placements go to the remappings file (D3). |
 
 ## 4. Not read: silent losses until they are added
@@ -128,4 +139,5 @@ the metadata work (plan step 4).
 |---|---|---|
 | Sprint 3 decision 3: the 32,192 variants only in `VARIANT_STUDY_NEW` | Open; recommended: leave out | Not read, so nothing to change if the recommendation holds |
 | Sprint 3 decision 4: the 2 live `estd214` chrY regions (`esv3818028`, `esv3817941`) | Open; recommended: treat as withdrawn | **Not implemented: the reader writes them today.** Needs an exclusion list if the recommendation is taken. |
-| Ticket 10 open points 1–5 (VCF version, `SVCLAIM`, types with no allele, duplicate IDs, key names) | Open | See sections 1 and 4 |
+| Ticket 10 points 1–3: VCF 4.4; `SVCLAIM` defaults to `D`; types with no VCF allele get one the file defines | Decided 2026-11-20 | Implemented; see section 1b |
+| Ticket 10 open points 4–5 (duplicate IDs, key and allele names) | Open | See sections 1, 1b and 4 |

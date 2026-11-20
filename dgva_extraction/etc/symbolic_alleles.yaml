@@ -2,14 +2,20 @@
 #
 # Keyed by the Sequence Ontology term name, normalised (lower case; spaces and hyphens become underscores). The names
 # are the Exchange variant types of dgva-pipeline/resources/ExchangeXSDs/Exchange.xsd; the SO terms actually used are
-# listed by dgva_extraction/sql/so_terms.sql once the SELECT-only account exists.
+# listed by `dgva-extraction check-types`.
 #
-#   allele:     the symbolic allele, without brackets; null when VCF has none (the record is refused, which fails
-#               the study, until ticket 10 decides how to write it)
-#   end_is_pos: true for insertions, whose END is POS (the inserted sequence has no length on the reference)
+# A record with a sequence is written with explicit REF and ALT bases, whatever its type. Without one, it gets its
+# type's symbolic allele (ticket 10, decided 2026-11-20):
+#   - one VCF 4.4 defines (DEL, INS, DUP, INV, CNV and their subtypes) where the type fits it;
+#   - otherwise one defined here, written in the ##ALT header of each VCF that uses it. VCF 4.4 allows this. These
+#     can't have colon-separated subtypes (only the VCF types can), and are written with SVLEN=.
+# The exact type is kept in TYPESOID, so several types can share an allele.
+#
+#   allele:      the symbolic allele, without brackets; null refuses the record, which fails the study
+#   end_is_pos:  true for insertions, whose END is POS (the inserted sequence has no length on the reference)
 #   description: written in the ##ALT header line
-#   svclaim:    the VCF 4.4 SVCLAIM the type implies (needed on DEL and DUP alleles); absent when the type alone
-#               doesn't say whether the call claims a change of abundance (D), an adjacency (J) or both (DJ)
+#   svclaim:     the VCF 4.4 SVCLAIM (needed on DEL and DUP alleles) when the type says it; otherwise the writer
+#                writes the default, D (abundance)
 #
 # The ALT description of a subtype names the subtype, so the header is the same whichever type uses it first.
 
@@ -35,14 +41,16 @@ line1_insertion: {allele: INS:ME:LINE1, end_is_pos: true, description: Insertion
 sva_insertion: {allele: INS:ME:SVA, end_is_pos: true, description: Insertion of an SVA element}
 herv_insertion: {allele: INS:ME:HERV, end_is_pos: true, description: Insertion of an HERV element}
 
-# No symbolic allele in VCF 4.4. Open in ticket 10: a record of one of these types fails the study until decided.
-interchromosomal_translocation: {allele: null, end_is_pos: false, description: Needs breakend (BND) notation and the mate position}
-intrachromosomal_translocation: {allele: null, end_is_pos: false, description: Needs breakend (BND) notation and the mate position}
-complex_substitution: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
-complex_structural_alteration: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
-complex_chromosomal_rearrangement: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
-sequence_alteration: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
-indel: {allele: null, end_is_pos: false, description: Written only from a sequence; no symbolic allele}
-delins: {allele: null, end_is_pos: false, description: Written only from a sequence; no symbolic allele}
-copy_number_neutral_loss_of_heterozygosity: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
-loss_of_heterozygosity: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
+# No VCF 4.4 allele: defined by the files that use them.
+# Translocations: breakend (BND) notation needs the mate's position; a later ticket writes it where DGVa has the
+# mate, and keeps <TRA> for the others.
+interchromosomal_translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
+intrachromosomal_translocation: {allele: TRA, end_is_pos: false, description: Translocation; the partner breakpoint is not given}
+complex_structural_alteration: {allele: CPX, end_is_pos: false, description: Complex rearrangement of the region}
+complex_chromosomal_rearrangement: {allele: CPX, end_is_pos: false, description: Complex rearrangement of the region}
+complex_substitution: {allele: CPX, end_is_pos: false, description: Complex rearrangement of the region}
+sequence_alteration: {allele: SEQALT, end_is_pos: false, description: Change of the sequence of the region; the kind of change is not given}
+indel: {allele: DELINS, end_is_pos: false, description: Deletion of the region and insertion of a sequence that is not given}
+delins: {allele: DELINS, end_is_pos: false, description: Deletion of the region and insertion of a sequence that is not given}
+copy_number_neutral_loss_of_heterozygosity: {allele: CNLOH, end_is_pos: false, description: Copy-neutral loss of heterozygosity}
+loss_of_heterozygosity: {allele: LOH, end_is_pos: false, description: Loss of heterozygosity}
