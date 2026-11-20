@@ -171,6 +171,9 @@ Still open with this layout:
 
 ## Decisions still open
 
+[`edge-cases.md`](edge-cases.md) lists every case the extraction does not yet handle, including those that
+depend on the decisions below.
+
 These came out of checking the writer's output with vcf-validator, or have no answer in the gap table. Each one
 currently makes the writer refuse the record, so a study it affects fails until it is decided.
 
@@ -195,7 +198,8 @@ currently makes the writer refuse the record, so a study it affects fails until 
    - Until this is decided, a `deletion` or `duplication` record is refused (`missing_svclaim`).
 3. **Types with no VCF symbolic allele.**
    - `sequence alteration`: `estd1` alone has 25,193 calls.
-   - `complex substitution`, `indel`/`delins` without a sequence, `copy-neutral loss of heterozygosity`.
+   - `complex substitution`, `complex chromosomal rearrangement` (7 `estd236` regions), `indel`/`delins` without a
+     sequence, `copy-neutral loss of heterozygosity`.
    - The translocations, which need breakend (`BND`) notation with the mate's position and orientation. That includes
      the `nstd83` translocation regions, which the reader positions from their supporting calls.
 

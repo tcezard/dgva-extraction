@@ -23,7 +23,8 @@ imported from it.
   chromosome; duplicate placements) in a side list per study.
 
 The VCF representation (keys, record rules, open decisions) is in
-[`docs/vcf-representation.md`](docs/vcf-representation.md). The keys are in
+[`docs/vcf-representation.md`](docs/vcf-representation.md). The DGVa data the extraction does not yet handle is
+listed in [`docs/edge-cases.md`](docs/edge-cases.md): keep it up to date as cases are found or fixed. The keys are in
 [`dgva_extraction/etc/vcf_keys.yaml`](dgva_extraction/etc/vcf_keys.yaml).
 
 ## Database safety

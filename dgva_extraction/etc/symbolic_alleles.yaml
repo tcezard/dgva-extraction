@@ -40,6 +40,7 @@ interchromosomal_translocation: {allele: null, end_is_pos: false, description: N
 intrachromosomal_translocation: {allele: null, end_is_pos: false, description: Needs breakend (BND) notation and the mate position}
 complex_substitution: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
 complex_structural_alteration: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
+complex_chromosomal_rearrangement: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
 sequence_alteration: {allele: null, end_is_pos: false, description: No VCF symbolic allele}
 indel: {allele: null, end_is_pos: false, description: Written only from a sequence; no symbolic allele}
 delins: {allele: null, end_is_pos: false, description: Written only from a sequence; no symbolic allele}

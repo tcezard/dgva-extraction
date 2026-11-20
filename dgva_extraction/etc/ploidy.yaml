@@ -23,6 +23,7 @@
 9823: {name: Sus scrofa, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
 9940: {name: Ovis aries, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
 9615: {name: Canis lupus familiaris, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
+9031: {name: Gallus gallus, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
 7955: {name: Danio rerio, ploidy: 2, chromosomes: {MT: 1, chrM: 1}}
 7227: {name: Drosophila melanogaster, ploidy: 2, chromosomes: {mitochondrion_genome: 1, chrM: 1}}
 39947: {name: Oryza sativa Japonica Group, ploidy: 2, chromosomes: {Mt: 1, Pt: 1}}
