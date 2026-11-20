@@ -84,7 +84,7 @@ def side_list(args):
 
 DUPLICATE_COLUMNS = ('study_accession', 'accession', 'variant_type', 'assembly_accession', 'placement_id', 'placement_class',
                      'placement_method', 'placement_rank', 'placements_per_assembly', 'assembly_unit', 'alt_status',
-                     'breakpoint_order',
+                     'breakpoint_order', 'strand',
                      'chromosome', 'start_pos', 'stop_pos', 'outer_start_pos', 'inner_start_pos', 'inner_stop_pos',
                      'outer_stop_pos')
 
@@ -140,17 +140,18 @@ def duplicate_placements(args):
         if row['placement_class'] == 'submitted':
             by_variant.setdefault((row['study_accession'], row['accession'], row['assembly_accession']), []).append(row)
     for (study, accession, assembly), placements in by_variant.items():
-        ranks = ', '.join(f'{row["placement_rank"]}/{row["breakpoint_order"]}' for row in placements)
+        ranks = ', '.join(f'{row["placement_rank"]}/{row["breakpoint_order"]}/{row["strand"]}' for row in placements)
         print(f'{study}\t{accession}\t{placements[0]["variant_type"]}\t{assembly}\t'
-              f'{len(placements)} submitted placements (rank/breakpoint order: {ranks})\t'
+              f'{len(placements)} submitted placements (rank/breakpoint order/strand: {ranks})\t'
               f'{describe_duplicates(placements)}')
     print('Breakpoint orders: ' + '; '.join(f'{value} = {description}'
                                             for value, description in breakpoint_orders.items()))
     print('Variants with two or more submitted placements on one assembly, whatever their rank:')
-    print('type\tplacements\twith breakpoint order\tlowest\thighest\tvariants')
+    print('type\tplacements\twith breakpoint order\tlowest\thighest\twith strand\tminus strand\tstrand not reported\tvariants')
     for row in summary:
         print('\t'.join(str(row[column]) for column in ('variant_type', 'placements', 'with_breakpoint_order',
                                                         'lowest_breakpoint_order', 'highest_breakpoint_order',
+                                                        'with_strand', 'minus_strand', 'strand_not_reported',
                                                         'variants')))
     print(f'{len(variants)} variants of {args.study} have a NotBest submitted placement; {len(seeds)} shown. '
           f'Every placement of those is written to {args.output}')

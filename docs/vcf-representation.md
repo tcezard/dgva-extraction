@@ -215,8 +215,9 @@ decided on 2026-11-20 and are implemented. Points 4–6 are open.
    should be present in more than one data record.
 
    **What the cases are** (`dgva-extraction duplicate-placements`, 2026-11-20). Variants with a `NotBest` submitted
-   placement are in 10 studies only: 71,548 variants, each with exactly 2 submitted placements on the assembly in every
-   example read. "Best" and "not best" mean different things depending on the case:
+   placement are in 10 studies only: 71,548 variants. All have exactly 2 submitted placements on the assembly, except
+   245 `nstd133` complex chromosomal rearrangements, which have 2 to 114 (one per breakpoint). "Best" and "not best"
+   mean different things depending on the case:
 
    | Case | Studies (variants) | Example | What the two placements are |
    |---|---|---|---|
@@ -243,8 +244,51 @@ decided on 2026-11-20 and are implemented. Points 4–6 are open.
      to the second. This turns the `BND` follow-up of point 3 into a sprint 4 need, since it concerns 70,125 variants.
    - **c:** the larger piece keeps the accession; the other piece gets its own ID. An `EVENT` key could link the pieces.
 
-   Still to decide: the form of the extra IDs (for example `<accession>_2`), how case a is recognised (two
-   single-base placements, the type, or `VAR_PLAC_BREAKPOINT_ORDER` if it numbers the placements), and the INFO key for the accession.
+   **`VAR_PLAC_BREAKPOINT_ORDER` doesn't identify case a** (checked 2026-11-20 with `duplicate-placements`, which now
+   prints a summary per study). Its values are `From` and `To` ("Links breakpoints using From and to"), not numbers.
+   - It is absent from every placement of cases b and c (`nstd116`, `nstd102`, `nstd10`, `nstd40`).
+   - In case a it is on the placements of only 3 of the 6 studies: the inter- and intrachromosomal translocation calls
+     of `nstd106` (2,890) and `nstd133` (782), and `estd210` (2). It is absent from all of `nstd115`, `nstd99` and
+     `nstd107` (66,105 variants), from the `translocation` regions (except one in `nstd133`), and from `nstd133`'s
+     inversions and CNVs.
+   - Where present, each pair is one `From` and one `To`.
+   - `nstd133`'s 245 complex chromosomal rearrangements have up to 114 single-base placements, each `From` or `To`
+     (for example `nsv2781790`: 3 `From` and 3 `To` on chromosomes 1 and 3). `From`/`To` alone doesn't say which
+     `From` joins which `To`.
+
+   **The strand (`VARIANT_PLACEMENT_STRAND`) gives the join orientation, given which end is `From`** (checked
+   2026-11-20). dbVar publishes VCFs with breakend notation for the same `nstd` studies. For every one of their 5,054
+   translocation records in `nstd106`, `nstd133` and `nstd107` (GRCh37), the bracket form follows from the strands of
+   the two DGVa placements, with no exception. dbVar writes the record at `From`, with `p` the `To` position:
+
+   | `From` strand | `To` strand | breakend at `From` | meaning |
+   |---|---|---|---|
+   | + | + | `t[p[` | the sequence left of `From` continues right of `To` |
+   | + | − | `t]p]` | left of `From`, then the reverse complement of the sequence left of `To` |
+   | − | + | `[p[t` | the reverse complement of the sequence right of `To`, then right of `From` |
+   | − | − | `]p]t` | the sequence left of `To` continues right of `From` |
+
+   That is, the pair reads as a path along `From` on its strand into `To` on its strand. The mate record at `To` is
+   the reverse of the same junction. Limits:
+   - **The rule needs to know which end is `From`.** Swapping the two ends changes the result unless both strands
+     are equal. Neither the placement ID nor the rank tells it. `nstd106` always has `From` at the lower genomic
+     position, and `nstd133` doesn't (390 lower, 391 higher). For `nstd107`, which has no breakpoint order in DGVa,
+     dbVar's record is always at the lower position: dbVar seems to take the lower end as `From` when it isn't given.
+     The same applies to `nstd99` and `nstd115` (no breakpoint order either): their orientation would rest on that
+     convention.
+   - **`not reported` and missing strands.** dbVar writes them as `+`. The intrachromosomal translocations of
+     `nstd106` (1,211) and `nstd107` (461) have `not reported` on both ends, and those of `nstd99` (475) have no strand
+     at all; a few dozen interchromosomal ones have one end missing. Their orientation is unknown, and breakend
+     notation has no way to say so: these would stay `<TRA>`, or be written with an assumed orientation and flagged.
+   - The complex chromosomal rearrangements of `nstd133` have a strand on every placement, but which `From` joins
+     which `To` is still not given.
+
+   So case a has to be recognised from the type (translocations, complex rearrangements) together with single-base
+   placements, or for inversions and CNVs from two single-base placements on one chromosome. The breakpoint order is
+   worth writing where it exists.
+
+   Still to decide: the form of the extra IDs (for example `<accession>_2`), the INFO key for the accession, and how
+   the complex rearrangements with more than 2 breakpoints are written.
 5. **Key and allele names (open; to review one by one).** `TYPESOID`, `ASSERTM`, `PLACEMETHOD`, `PARENT`, `SAMPLESET`,
    `VALIDMETH` and `VALIDRES` reuse the legacy DGVa VCF exporter's names where it had one. The rest (`HGVS`, `PLACRANK`,
    `PLACEMENTS`, `CYTOBAND`, `MUTORDER`, `SUBMITTED_TYPE`, `ALTSTATUS`, `SVSEQ`) are new. The keys for the fields of

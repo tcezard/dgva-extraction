@@ -73,9 +73,10 @@ def test_oracle_only_constructs_are_listed(name):
 @pytest.mark.parametrize('name', [name for name in SQL_FILES if name != 'session_privileges'])
 def test_tables_are_schema_qualified(name):
     code = strip_comments_and_strings(sql_text(name))
+    # Common table expressions ("name AS (") are the only unqualified names allowed.
+    ctes = {cte.lower() for cte in re.findall(r'\b([a-z_]\w*)\s+AS\s*\(', code, re.I)}
     for table in re.findall(r'\b(?:FROM|JOIN)\s+([a-z_][\w.]*)', code, re.I):
-        assert table.startswith('dgva.') or table.lower() in {'placement_class', 'variant', 'study_assembly',
-                                                               'variant_summary', 'study_summary'}, table
+        assert table.startswith('dgva.') or table.lower() in ctes, table
 
 
 def test_no_sql_text_is_built_in_python():

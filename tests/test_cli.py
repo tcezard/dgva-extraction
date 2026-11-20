@@ -114,7 +114,7 @@ def test_extract_fails_the_study_on_a_refused_record(run_extract, tmp_path):
 def placement(placement_id, rank, chromosome, start, stop, method='Submitted genomic', assembly='GCA_1'):
     return {'placement_id': placement_id, 'variant_type': 'deletion', 'assembly_accession': assembly, 'placement_method': method,
             'has_remap_score': 0, 'placement_rank': rank, 'placements_per_assembly': 'Multiple',
-            'assembly_unit': None, 'alt_status': None, 'breakpoint_order': None, 'chromosome': chromosome, 'start_pos': start,
+            'assembly_unit': None, 'alt_status': None, 'breakpoint_order': None, 'strand': None, 'chromosome': chromosome, 'start_pos': start,
             'stop_pos': stop, 'outer_start_pos': None, 'outer_stop_pos': None}
 
 
@@ -129,7 +129,8 @@ def test_duplicate_placements_lists_every_placement_and_how_they_differ(tmp_path
                   placement(3, 'BestAvailable', '1', 10, 20, method='Remapped', assembly='GCA_2')]
     session = FakeSession()
     summary = [{'variant_type': 'deletion', 'placements': 2, 'with_breakpoint_order': 2,
-                'lowest_breakpoint_order': '1', 'highest_breakpoint_order': '2', 'variants': 7}]
+                'lowest_breakpoint_order': '1', 'highest_breakpoint_order': '2', 'with_strand': 2,
+                'minus_strand': 1, 'strand_not_reported': 0, 'variants': 7}]
     session.results = {'duplicate_placement_seeds': seeds, 'variant_placements': placements,
                        'duplicate_placement_summary': summary,
                        'breakpoint_order_cv': [{'breakpoint_order': '1', 'description': 'first', 'is_current': 1}]}
@@ -142,9 +143,9 @@ def test_duplicate_placements_lists_every_placement_and_how_they_differ(tmp_path
         {'variant_study_id': 10}, {'variant_study_id': 12}]
     assert len(output.read_text().splitlines()) == 1 + 2 * 3
     printed = capsys.readouterr().out
-    assert ('estd1\tesv1\tdeletion\tGCA_1\t2 submitted placements (rank/breakpoint order: BestAvailable/None, '
-            'NotBest/None)\tsame chromosome, overlapping') in printed
-    assert 'deletion\t2\t2\t1\t2\t7' in printed
+    assert ('estd1\tesv1\tdeletion\tGCA_1\t2 submitted placements (rank/breakpoint order/strand: '
+            'BestAvailable/None/None, NotBest/None/None)\tsame chromosome, overlapping') in printed
+    assert 'deletion\t2\t2\t1\t2\t2\t1\t0\t7' in printed
     assert '1 = first' in printed
 
 
