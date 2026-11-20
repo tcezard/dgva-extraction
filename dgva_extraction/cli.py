@@ -10,15 +10,17 @@ import resource
 import sys
 import time
 
+from ebi_eva_common_pyutils.logger import logging_config as log_cfg
+
 from dgva_extraction import __version__
-from dgva_extraction.config import load_database_config
+from dgva_extraction.config import database_config, load_config
 from dgva_extraction.database import DgvaDatabase
 from dgva_extraction.keys import SymbolicAlleles
 from dgva_extraction.reader import StudyReader, study_side_list, write_side_list
 from dgva_extraction.reference import FastaReference, Genome
 from dgva_extraction.vcf_writer import StudyVcfWriter, VcfLineBuilder
 
-logger = logging.getLogger('dgva_extraction')
+logger = log_cfg.get_logger(__name__)
 
 
 def peak_memory_mb():
@@ -35,7 +37,7 @@ def write_rows(path, columns, rows):
 
 
 def connect(args):
-    return DgvaDatabase.connect(load_database_config(args.config))
+    return DgvaDatabase.connect(database_config())
 
 
 def check_privileges(args):
@@ -150,7 +152,10 @@ def build_parser():
     parser = argparse.ArgumentParser(prog='dgva-extraction', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--version', action='version', version=__version__)
-    parser.add_argument('--config', help='YAML configuration with a "dgva" section, kept outside the repository')
+    parser.add_argument('--config', help='YAML configuration with a DGVA section, kept outside the repository. '
+                                         'Default: $DGVA_EXTRACTION_CONFIG, then ~/.dgva_extraction_config.yml')
+    parser.add_argument('--debug', action='store_true', default=False,
+                        help='Set the logging to debug level')
     commands = parser.add_subparsers(dest='command', required=True)
 
     commands.add_parser('check-privileges', help='Connect and check that the session cannot write')
@@ -179,10 +184,11 @@ COMMANDS = {'check-privileges': check_privileges, 'list-studies': list_studies, 
 
 
 def main(argv=None):
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+    log_cfg.add_stdout_handler()
     args = build_parser().parse_args(argv)
-    if not args.config:
-        build_parser().error('--config is required')
+    if args.debug:
+        log_cfg.set_log_level(logging.DEBUG)
+    load_config(args.config)
     return COMMANDS[args.command](args)
 
 

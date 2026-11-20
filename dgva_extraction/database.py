@@ -11,13 +11,13 @@ and DDL; this module adds the guards that catch the wrong credentials being conf
 
 A database error is never swallowed: it propagates and fails the study.
 """
-import logging
 import re
 from importlib import resources
 
+from ebi_eva_common_pyutils.logger import AppLogger
+
 from dgva_extraction.config import DEFAULT_ARRAYSIZE, DEFAULT_SCHEMA
 
-logger = logging.getLogger(__name__)
 
 SQL_PACKAGE = 'dgva_extraction'
 SQL_DIRECTORY = 'sql'
@@ -28,8 +28,10 @@ READ_ONLY_SYSTEM_PRIVILEGES = frozenset({
     'CREATE SESSION', 'ALTER SESSION', 'SET CONTAINER',
     'SELECT ANY TABLE', 'READ ANY TABLE', 'SELECT ANY DICTIONARY', 'SELECT ANY SEQUENCE',
 })
-# Object privileges on the DGVa schema's objects that cannot change data.
-READ_ONLY_OBJECT_PRIVILEGES = frozenset({'SELECT', 'READ'})
+# Object privileges on the DGVa schema's objects that cannot change data. INHERIT PRIVILEGES on a user is granted to
+# PUBLIC by default for every Oracle user: it concerns the privileges that user lends to invoker's-rights code it
+# calls, and gives this session no way to write.
+READ_ONLY_OBJECT_PRIVILEGES = frozenset({'SELECT', 'READ', 'INHERIT PRIVILEGES', 'INHERIT REMOTE PRIVILEGES'})
 PRIVILEGE_QUERY = 'session_privileges'
 
 
@@ -45,11 +47,13 @@ def load_sql(name):
 
 
 def find_write_privileges(privilege_rows):
-    """Return the privileges, among the rows of session_privileges.sql, that allow a write.
+    """Split the write privileges among the rows of session_privileges.sql into those that stop the run and those
+    granted to PUBLIC, which are only reported. Returns (blocking, public), each a sorted list of descriptions.
 
-    Each row has privilege_kind (SYSTEM, OBJECT or OWNER), privilege, owner and object_name.
+    Each row has privilege_kind (SYSTEM, OBJECT or OWNER), grantee_kind (USER, ROLE, PUBLIC or SESSION), privilege,
+    owner and object_name.
     """
-    found = []
+    blocking, public = set(), set()
     for row in privilege_rows:
         kind = row['privilege_kind']
         privilege = (row['privilege'] or '').upper()
@@ -59,11 +63,15 @@ def find_write_privileges(privilege_rows):
             continue
         # OWNER rows, unknown kinds and every other privilege count as a write privilege.
         target = f' on {row.get("owner")}.{row.get("object_name")}' if row.get('object_name') else ''
-        found.append(f'{kind} {privilege}{target}')
-    return sorted(set(found))
+        description = f'{kind} {privilege}{target}'
+        if kind == 'OBJECT' and row.get('grantee_kind') == 'PUBLIC':
+            public.add(description)
+        else:
+            blocking.add(description)
+    return sorted(blocking), sorted(public)
 
 
-class DgvaDatabase:
+class DgvaDatabase(AppLogger):
     """A read-only session on the DGVa schema. Use it as a context manager."""
 
     def __init__(self, connection, schema=DEFAULT_SCHEMA, arraysize=DEFAULT_ARRAYSIZE):
@@ -99,13 +107,18 @@ class DgvaDatabase:
         if not rows:
             # A session always holds at least CREATE SESSION: an empty answer means the check did not run.
             raise WritePrivilegeError('The privilege check returned no rows; refusing to continue')
-        write_privileges = find_write_privileges(rows)
+        write_privileges, public_write_privileges = find_write_privileges(rows)
         if write_privileges:
             raise WritePrivilegeError(
                 'The DGVa session can write, so dgva-extraction will not run with these credentials. '
                 'Use the SELECT-only account. Write privileges found: ' + '; '.join(write_privileges))
+        if public_write_privileges:
+            # Granted to every account on the database, not to this one: dgva-extraction calls no PL/SQL, and its
+            # SQL is checked for calls to DGVa functions and packages (tests/test_sql.py). Ask the DBA to revoke them.
+            self.warning('PUBLIC holds privileges that can change DGVa data (any account can use them; '
+                         'dgva-extraction never does): ' + '; '.join(public_write_privileges))
         self._checked = True
-        logger.info('Privilege check passed: the session holds no write privilege')
+        self.info('Privilege check passed: the session holds no write privilege of its own')
 
     def stream(self, sql_name, binds):
         """Run dgva_extraction/sql/<sql_name>.sql with bind variables and yield rows as dicts, lower-case keys."""

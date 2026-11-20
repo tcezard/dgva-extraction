@@ -14,7 +14,6 @@ It applies the rules written down in sprints 1 and 2 (reference/dgva-oracle-sche
 """
 import heapq
 import itertools
-import logging
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Iterable, Iterator, List, Optional
@@ -22,7 +21,6 @@ from typing import Iterable, Iterator, List, Optional
 from dgva_extraction.keys import SymbolicAlleles
 from dgva_extraction.record import ConfidenceInterval, RecordKind, VariantRecord
 
-logger = logging.getLogger(__name__)
 
 NO_POSITION_METHODS = frozenset({'Remap failed', 'Submitted without placement on assembly',
                                  'Submitted on non-INSDC assembly'})

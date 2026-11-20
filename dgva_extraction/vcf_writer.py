@@ -13,7 +13,6 @@ The writer streams: records must arrive grouped by chromosome and ordered by sta
 returns them. Each contig is written to its own temporary file as records arrive (only records sharing one position
 are held in memory), and the files are joined in assembly-report order at the end.
 """
-import logging
 import os
 import shutil
 import tempfile
@@ -25,7 +24,6 @@ from dgva_extraction.keys import KeyTable, SymbolicAlleles, UnmappedValueError
 from dgva_extraction.record import VariantRecord
 from dgva_extraction.reference import Contig, Genome, ReferenceLookupError
 
-logger = logging.getLogger(__name__)
 
 VCF_VERSION = 'VCFv4.4'
 DEFAULT_PLACEMENT_METHOD = 'Submitted genomic'

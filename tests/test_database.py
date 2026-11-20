@@ -1,15 +1,26 @@
 """Ticket 11: the connection module, with a fake connection: streaming, bind variables, no commit, privilege check."""
 import pytest
 
-from dgva_extraction.config import ConfigurationError, load_database_config
+from dgva_extraction.config import ConfigurationError, database_config, load_config
 from dgva_extraction.database import DgvaDatabase, WritePrivilegeError, find_write_privileges, load_sql
 
+def privilege(kind, privilege, owner=None, object_name=None, grantee='USER'):
+    return {'privilege_kind': kind, 'grantee_kind': 'SESSION' if kind == 'SYSTEM' else grantee,
+            'privilege': privilege, 'owner': owner, 'object_name': object_name}
+
+
+# What the read-only account showed on 2026-11-20: system privileges, plus Oracle's default INHERIT PRIVILEGES.
 READ_ONLY_PRIVILEGES = [
-    {'privilege_kind': 'SYSTEM', 'privilege': 'CREATE SESSION', 'owner': None, 'object_name': None},
-    {'privilege_kind': 'OBJECT', 'privilege': 'SELECT', 'owner': 'DGVA', 'object_name': 'VARIANT_STUDY'},
-    {'privilege_kind': 'OBJECT', 'privilege': 'READ', 'owner': 'DGVA', 'object_name': 'VARIANT_PLACEMENT'},
+    privilege('SYSTEM', 'CREATE SESSION'),
+    privilege('SYSTEM', 'SELECT ANY TABLE'),
+    privilege('SYSTEM', 'SELECT ANY SEQUENCE'),
+    privilege('OBJECT', 'SELECT', 'DGVA', 'VARIANT_STUDY'),
+    privilege('OBJECT', 'READ', 'DGVA', 'VARIANT_PLACEMENT'),
+    privilege('OBJECT', 'INHERIT PRIVILEGES', 'DGVA', 'DGVA', grantee='PUBLIC'),
 ]
-PRIVILEGE_COLUMNS = ('privilege_kind', 'privilege', 'owner', 'object_name')
+PUBLIC_PACKAGE_GRANTS = [privilege('OBJECT', 'EXECUTE', 'DGVA', name, grantee='PUBLIC')
+                         for name in ('STAGE_TO_ARCHIVE_PKG', 'STAGE_TO_ARCHIVE_VP_PKG')]
+PRIVILEGE_COLUMNS = ('privilege_kind', 'grantee_kind', 'privilege', 'owner', 'object_name')
 
 
 class FakeCursor:
@@ -145,21 +156,35 @@ def test_privilege_check_runs_with_the_schema_as_a_bind():
     assert binds == {'schema': 'DGVA'}
 
 
-@pytest.mark.parametrize('privilege', [
-    {'privilege_kind': 'SYSTEM', 'privilege': 'INSERT ANY TABLE', 'owner': None, 'object_name': None},
-    {'privilege_kind': 'SYSTEM', 'privilege': 'CREATE TABLE', 'owner': None, 'object_name': None},
-    {'privilege_kind': 'SYSTEM', 'privilege': 'DROP ANY TABLE', 'owner': None, 'object_name': None},
-    {'privilege_kind': 'OBJECT', 'privilege': 'UPDATE', 'owner': 'DGVA', 'object_name': 'VARIANT_STUDY'},
-    {'privilege_kind': 'OBJECT', 'privilege': 'DELETE', 'owner': 'DGVA', 'object_name': 'VARIANT_PLACEMENT'},
-    {'privilege_kind': 'OBJECT', 'privilege': 'EXECUTE', 'owner': 'DGVA', 'object_name': 'SOME_PACKAGE'},
-    {'privilege_kind': 'OWNER', 'privilege': 'SCHEMA OWNER', 'owner': 'DGVA', 'object_name': None},
+@pytest.mark.parametrize('write_privilege', [
+    privilege('SYSTEM', 'INSERT ANY TABLE'),
+    privilege('SYSTEM', 'CREATE TABLE'),
+    privilege('SYSTEM', 'DROP ANY TABLE'),
+    privilege('OBJECT', 'UPDATE', 'DGVA', 'VARIANT_STUDY'),
+    privilege('OBJECT', 'DELETE', 'DGVA', 'VARIANT_PLACEMENT'),
+    privilege('OBJECT', 'EXECUTE', 'DGVA', 'STAGE_TO_ARCHIVE_PKG'),
+    privilege('OBJECT', 'INSERT', 'DGVA', 'VARIANT_STUDY', grantee='ROLE'),
+    privilege('OWNER', 'SCHEMA OWNER', 'DGVA'),
 ])
-def test_privilege_check_stops_on_a_write_privilege(privilege):
-    connection = FakeConnection(privileges=READ_ONLY_PRIVILEGES + [privilege])
+def test_privilege_check_stops_on_a_write_privilege_of_the_account(write_privilege):
+    connection = FakeConnection(privileges=READ_ONLY_PRIVILEGES + PUBLIC_PACKAGE_GRANTS + [write_privilege])
     with pytest.raises(WritePrivilegeError) as error:
         open_database(connection)
-    assert privilege['privilege'] in str(error.value)
+    assert write_privilege['privilege'] in str(error.value)
     assert len(connection.executed) == 1
+
+
+def test_write_privileges_granted_to_public_are_only_reported(caplog):
+    connection = FakeConnection(privileges=READ_ONLY_PRIVILEGES + PUBLIC_PACKAGE_GRANTS)
+    with caplog.at_level('INFO', logger='DgvaDatabase'):
+        open_database(connection)
+    warnings = [record.getMessage() for record in caplog.records if record.levelname == 'WARNING']
+    assert len(warnings) == 1
+    assert 'EXECUTE on DGVA.STAGE_TO_ARCHIVE_PKG' in warnings[0] and 'PUBLIC' in warnings[0]
+
+
+def test_inherit_privileges_is_not_a_write_privilege():
+    assert find_write_privileges(READ_ONLY_PRIVILEGES) == ([], [])
 
 
 def test_privilege_check_stops_when_it_returns_nothing():
@@ -168,21 +193,21 @@ def test_privilege_check_stops_when_it_returns_nothing():
 
 
 def test_find_write_privileges_lists_each_once():
-    rows = READ_ONLY_PRIVILEGES + [
-        {'privilege_kind': 'SYSTEM', 'privilege': 'UNLIMITED TABLESPACE', 'owner': None, 'object_name': None}] * 2
-    assert find_write_privileges(rows) == ['SYSTEM UNLIMITED TABLESPACE']
-    assert find_write_privileges(READ_ONLY_PRIVILEGES) == []
+    rows = READ_ONLY_PRIVILEGES + PUBLIC_PACKAGE_GRANTS * 2 + [privilege('SYSTEM', 'UNLIMITED TABLESPACE')] * 2
+    assert find_write_privileges(rows) == (
+        ['SYSTEM UNLIMITED TABLESPACE'],
+        ['OBJECT EXECUTE on DGVA.STAGE_TO_ARCHIVE_PKG', 'OBJECT EXECUTE on DGVA.STAGE_TO_ARCHIVE_VP_PKG'])
 
 
 def test_connect_closes_the_connection_when_the_check_fails(monkeypatch, tmp_path):
-    connection = FakeConnection(privileges=READ_ONLY_PRIVILEGES + [
-        {'privilege_kind': 'SYSTEM', 'privilege': 'DELETE ANY TABLE', 'owner': None, 'object_name': None}])
+    connection = FakeConnection(privileges=READ_ONLY_PRIVILEGES + [privilege('SYSTEM', 'DELETE ANY TABLE')])
     import oracledb
     monkeypatch.setattr(oracledb, 'connect', lambda **kwargs: connection)
     config = tmp_path / 'config.yaml'
-    config.write_text('dgva: {host: h, port: 1521, service_name: s, user: u, password: p}\n')
+    config.write_text('DGVA: {host: h, port: 1521, service_name: s, user: u, password: p}\n')
+    load_config(str(config))
     with pytest.raises(WritePrivilegeError):
-        DgvaDatabase.connect(load_database_config(config))
+        DgvaDatabase.connect(database_config())
     assert connection.closed and connection.rollbacks == 1 and connection.commits == 0
     assert connection.autocommit is False
 
@@ -190,8 +215,9 @@ def test_connect_closes_the_connection_when_the_check_fails(monkeypatch, tmp_pat
 def test_config_keeps_the_password_out_of_repr(tmp_path, monkeypatch):
     monkeypatch.delenv('DGVA_PASSWORD', raising=False)
     config = tmp_path / 'config.yaml'
-    config.write_text('dgva: {host: h, port: 1521, service_name: s, user: u, password: secret}\n')
-    loaded = load_database_config(config)
+    config.write_text('DGVA: {host: h, port: 1521, service_name: s, user: u, password: secret}\n')
+    load_config(str(config))
+    loaded = database_config()
     assert loaded.password == 'secret' and 'secret' not in repr(loaded)
     assert loaded.schema == 'DGVA' and loaded.arraysize == 10000
 
@@ -199,14 +225,46 @@ def test_config_keeps_the_password_out_of_repr(tmp_path, monkeypatch):
 def test_config_password_from_the_environment(tmp_path, monkeypatch):
     monkeypatch.setenv('DGVA_PASSWORD', 'from-env')
     config = tmp_path / 'config.yaml'
-    config.write_text('dgva: {host: h, port: 1521, service_name: s, user: u}\n')
-    assert load_database_config(config).password == 'from-env'
+    config.write_text('DGVA: {host: h, port: 1521, service_name: s, user: u}\n')
+    load_config(str(config))
+    assert database_config().password == 'from-env'
 
 
 def test_config_reports_missing_values(tmp_path, monkeypatch):
     monkeypatch.delenv('DGVA_PASSWORD', raising=False)
     config = tmp_path / 'config.yaml'
-    config.write_text('dgva: {host: h}\n')
+    config.write_text('DGVA: {host: h}\n')
+    load_config(str(config))
     with pytest.raises(ConfigurationError) as error:
-        load_database_config(config)
+        database_config()
     assert 'port' in str(error.value) and 'password' in str(error.value)
+
+
+def test_config_without_a_dgva_section(tmp_path):
+    config = tmp_path / 'config.yaml'
+    config.write_text('other: {}\n')
+    load_config(str(config))
+    with pytest.raises(ConfigurationError):
+        database_config()
+
+
+def test_config_found_through_the_environment(tmp_path, monkeypatch):
+    config = tmp_path / 'from_env.yaml'
+    config.write_text('DGVA: {host: env-host, port: 1521, service_name: s, user: u, password: p}\n')
+    monkeypatch.setenv('DGVA_EXTRACTION_CONFIG', str(config))
+    load_config(None)
+    assert database_config().host == 'env-host'
+
+
+def test_missing_config_file_is_reported(tmp_path, monkeypatch):
+    monkeypatch.delenv('DGVA_EXTRACTION_CONFIG', raising=False)
+    monkeypatch.setenv('HOME', str(tmp_path))
+    with pytest.raises(FileNotFoundError):
+        load_config(str(tmp_path / 'missing.yaml'))
+
+
+def test_privilege_check_is_logged_under_the_class_name(caplog):
+    with caplog.at_level('INFO', logger='DgvaDatabase'):
+        open_database(FakeConnection())
+    assert [(record.name, record.getMessage()) for record in caplog.records] == \
+        [('DgvaDatabase', 'Privilege check passed: the session holds no write privilege of its own')]

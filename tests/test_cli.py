@@ -38,7 +38,7 @@ def sample_study_rows():
 def run_extract(reference_files, tmp_path, monkeypatch):
     fasta, report = reference_files
     config = tmp_path / 'config.yaml'
-    config.write_text('dgva: {host: h, port: 1521, service_name: s, user: u, password: p}\n')
+    config.write_text('DGVA: {host: h, port: 1521, service_name: s, user: u, password: p}\n')
 
     def run(rows, output_dir, study='estd1'):
         monkeypatch.setattr(cli, 'connect', lambda args: FakeSession(rows))

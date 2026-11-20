@@ -47,12 +47,19 @@ pytest
 The writer's tests run [vcf-validator](https://github.com/EBIvariation/vcf-validator) on the VCFs they write when
 `vcf_validator` is on the `PATH`. CI installs it.
 
-## Configuration
+## Configuration and logging
 
-Credentials are read from a YAML file **outside the repository** (never commit one):
+Configuration and logging use [ebi-eva-common-pyutils](https://github.com/EBIvariation/eva-common-pyutils), as
+eva-submission does:
+- the YAML file is loaded into the shared `cfg`;
+- each module logs through `logging_config` (`--debug` sets the level to debug).
+
+Credentials are read from a YAML file **outside the repository** (never commit one). It is found at the `--config`
+path, else at `$DGVA_EXTRACTION_CONFIG`, else at `~/.dgva_extraction_config.yml`. The `DGVA` section uses the same
+keys as convertGVFtoVCF's config, so one file can serve both:
 
 ```yaml
-dgva:
+DGVA:
   host: <database host>
   port: 1521
   service_name: <service>

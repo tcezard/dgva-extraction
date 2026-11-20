@@ -86,3 +86,12 @@ def test_no_sql_text_is_built_in_python():
             assert not re.search(r'["\']\s*(SELECT|WITH)\b[^"\']*\bFROM\b', source, re.I), \
                 f'{path.name} builds SQL in a string'
             assert 'commit()' not in source, f'{path.name} calls commit()'
+
+
+@pytest.mark.parametrize('name', SQL_FILES)
+def test_no_dgva_function_or_package_is_called(name):
+    # PUBLIC can execute DGVa packages that write (STAGE_TO_ARCHIVE_*); a SELECT calling one of their functions
+    # could write too. Only tables and views of the schema may be named.
+    code = strip_comments_and_strings(sql_text(name))
+    assert not re.search(r'\bdgva\.\w+\.\w+', code, re.I), 'package member called'
+    assert not re.search(r'\bdgva\.\w+\s*\(', code, re.I), 'schema function called'
